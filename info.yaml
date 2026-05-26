@@ -1,0 +1,43 @@
+yaml_version: 6
+project:
+  title: "4-bit ALU"
+  author: "Vanessa Rocha Perez"
+  description: "A simple 4-bit ALU capable of arithmetic and logic operations"
+  language: "Verilog"
+  clock_hz: 0
+
+  tiles: "1x1"
+
+  source_files:
+    - "tt_um_vanessa_rocha.v"
+  top_module: "tt_um_vanessa_rocha"
+
+pinout:
+  ui[0]: "A0"
+  ui[1]: "A1"
+  ui[2]: "A2"
+  ui[3]: "A3"
+  ui[4]: "B0"
+  ui[5]: "B1"
+  ui[6]: "B2"
+  ui[7]: "B3"
+
+  uo[0]: "Result0"
+  uo[1]: "Result1"
+  uo[2]: "Result2"
+  uo[3]: "Result3"
+  uo[4]: "Carry"
+  uo[5]: ""
+  uo[6]: ""
+  uo[7]: ""
+
+  uio[0]: "OP0"
+  uio[1]: "OP1"
+  uio[2]: "OP2"
+  uio[3]: ""
+  uio[4]: ""
+  uio[5]: ""
+  uio[6]: ""
+  uio[7]: ""
+  
+
