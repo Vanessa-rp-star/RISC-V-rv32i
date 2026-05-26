@@ -2,7 +2,7 @@ yaml_version: 6
 project:
   title: "RISC-V 32-bit Single-Cycle Core"
   author: "Vanessa Rocha Perez"
-  description: "A 32-bit RISC-V processor adapted for Tiny Tapeout. Uses multiplexed outputs to monitor the Program Counter (PC) and Data Address bus."
+  description: "32-bit RISC-V ."
   language: "Verilog"
   clock_hz: 50000000
 
