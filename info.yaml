@@ -1,10 +1,10 @@
 yaml_version: 6
 project:
-  title: "4-bit ALU"
+  title: "RISC-V 32-bit Single-Cycle Core"
   author: "Vanessa Rocha Perez"
-  description: "A simple 4-bit ALU capable of arithmetic and logic operations"
+  description: "A 32-bit RISC-V processor adapted for Tiny Tapeout. Uses multiplexed outputs to monitor the Program Counter (PC) and Data Address bus."
   language: "Verilog"
-  clock_hz: 0
+  clock_hz: 50000000
 
   tiles: "1x1"
 
@@ -13,31 +13,32 @@ project:
   top_module: "tt_um_vanessa_rocha"
 
 pinout:
-  ui[0]: "A0"
-  ui[1]: "A1"
-  ui[2]: "A2"
-  ui[3]: "A3"
-  ui[4]: "B0"
-  ui[5]: "B1"
-  ui[6]: "B2"
-  ui[7]: "B3"
+  # Entradas (ui) - Usadas para el Multiplexor del PC
+  ui[0]: "Mux_Sel_0 (Select PC Byte)"
+  ui[1]: "Mux_Sel_1 (Select PC Byte)"
+  ui[2]: "Unused"
+  ui[3]: "Unused"
+  ui[4]: "Unused"
+  ui[5]: "Unused"
+  ui[6]: "Unused"
+  ui[7]: "Unused"
 
-  uo[0]: "Result0"
-  uo[1]: "Result1"
-  uo[2]: "Result2"
-  uo[3]: "Result3"
-  uo[4]: "Carry"
-  uo[5]: ""
-  uo[6]: ""
-  uo[7]: ""
+  # Salidas (uo) - Muestra 1 byte del Program Counter (PC) a la vez
+  uo[0]: "PC_Out_Bit0"
+  uo[1]: "PC_Out_Bit1"
+  uo[2]: "PC_Out_Bit2"
+  uo[3]: "PC_Out_Bit3"
+  uo[4]: "PC_Out_Bit4"
+  uo[5]: "PC_Out_Bit5"
+  uo[6]: "PC_Out_Bit6"
+  uo[7]: "PC_Out_Bit7"
 
-  uio[0]: "OP0"
-  uio[1]: "OP1"
-  uio[2]: "OP2"
-  uio[3]: ""
-  uio[4]: ""
-  uio[5]: ""
-  uio[6]: ""
-  uio[7]: ""
-  
-
+  # Bidireccionales (uio) - Configurados como salidas para la Dirección de Memoria/ALU
+  uio[0]: "Data_Addr_Bit0"
+  uio[1]: "Data_Addr_Bit1"
+  uio[2]: "Data_Addr_Bit2"
+  uio[3]: "Data_Addr_Bit3"
+  uio[4]: "Data_Addr_Bit4"
+  uio[5]: "Data_Addr_Bit5"
+  uio[6]: "Data_Addr_Bit6"
+  uio[7]: "Data_Addr_Bit7"
