@@ -277,7 +277,7 @@ module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, inp
         else if (csr_we) case(csr_addr) 12'h305: mtvec <= wdata; 12'h341: mepc <= wdata; 12'h342: mcause <= wdata; endcase
     end
 endmodule
-
+   endmodule
      
            
 
