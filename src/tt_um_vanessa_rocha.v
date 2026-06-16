@@ -66,7 +66,7 @@ module tt_um_vanessa_rocha (
     // Silenciamos advertencias de Yosys/OpenLane sobre pines no usados
     wire _unused = &{ui_in[7:2], uio_in, 1'b0};
 
-endmodule
+//endmodule
 
 
 // =============================================================================
@@ -276,6 +276,7 @@ module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, inp
         else if (is_ecall) begin mepc <= pc_current; mcause <= 11; end
         else if (csr_we) case(csr_addr) 12'h305: mtvec <= wdata; 12'h341: mepc <= wdata; 12'h342: mcause <= wdata; endcase
     end
+endmodule
 endmodule
 
      
