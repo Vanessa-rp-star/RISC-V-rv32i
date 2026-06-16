@@ -18,24 +18,28 @@ module tt_um_vanessa_rocha (
     input  wire       rst_n     // Reset activo en BAJO
 );
 
-    // 1. Acondicionamiento de señales
-    // Tiny Tapeout usa reset activo en bajo (rst_n), pero tu CPU usa reset activo en alto.
     wire reset_cpu = ~rst_n; 
 
-    // Cables internos para extraer los datos de 32 bits de tu CPU
     wire [31:0] pc_out;
     wire [31:0] data_addr_out;
     wire [31:0] data_write_out;
     wire [3:0]  mem_write_mask;
+    
+    // Cable para conectar la ROM al procesador
+    wire [31:0] current_instruction;
 
-    // 2. Instanciación de tu procesador RISC-V
+    // Instanciamos la ROM de prueba
+    instruction_rom mi_rom (
+        .addr(pc_out[7:0]), // Usamos los 8 bits bajos del PC para buscar la instrucción
+        .instr(current_instruction)
+    );
+
+    // Instanciación del procesador RISC-V
     single_cycle_rv32i_vr mi_procesador (
         .clk(clk),
         .reset(reset_cpu),
         .en(ena),
-        // IMPORTANTE: Al no tener pines suficientes para meter 32 bits de instrucción,
-        // por ahora inyectamos un NOP (addi x0, x0, 0) o deberás conectar una ROM interna aquí.
-        .instr_bus_in(32'h00000013),       
+        .instr_bus_in(current_instruction), // AHORA LEE DE LA ROM
         .data_read_bus_in(32'h00000000),   
         .pc_bus_out(pc_out),
         .data_addr_bus_out(data_addr_out),
@@ -43,34 +47,48 @@ module tt_um_vanessa_rocha (
         .mem_write_mask_out(mem_write_mask)
     );
 
-    // 3. Multiplexor de Salida (Ver 32 bits a través de 8 pines)
-    // Usamos los primeros 2 interruptores de entrada (ui_in[1:0]) para elegir qué byte del PC ver.
     reg [7:0] salida_mux;
     
     always @(*) begin
         case (ui_in[1:0])
-            2'b00: salida_mux = pc_out[7:0];    // Byte 0 (LBS)
-            2'b01: salida_mux = pc_out[15:8];   // Byte 1
-            2'b10: salida_mux = pc_out[23:16];  // Byte 2
-            2'b11: salida_mux = pc_out[31:24];  // Byte 3 (MSB)
+            2'b00: salida_mux = pc_out[7:0];    
+            2'b01: salida_mux = pc_out[15:8];   
+            2'b10: salida_mux = pc_out[23:16];  
+            2'b11: salida_mux = pc_out[31:24];  
         endcase
     end
 
-    // Asignamos el resultado del multiplexor a los pines de salida dedicados
     assign uo_out = salida_mux;
+    assign uio_oe  = 8'b11111111; 
+    assign uio_out = data_addr_out[7:0]; 
 
-    // Configuramos los pines bidireccionales como salidas para ver más datos
-    assign uio_oe  = 8'b11111111; // 1 = Todos configurados como salida
-    assign uio_out = data_addr_out[7:0]; // Aquí mostramos los 8 bits bajos de la ALU/Dirección
-
-    // Silenciamos advertencias de Yosys/OpenLane sobre pines no usados
     wire _unused = &{ui_in[7:2], uio_in, 1'b0};
 
-//endmodule
-
+endmodule
 
 // =============================================================================
-// TU CÓDIGO: CORE RISC-V Y SUBMÓDULOS
+// MEMORIA ROM DE PRUEBA (Para forzar la síntesis del CPU)
+// =============================================================================
+module instruction_rom (
+    input  wire [7:0] addr,
+    output reg  [31:0] instr
+);
+    always @(*) begin
+        case (addr)
+            // Programa de prueba básico que usa suma, resta, AND y OR
+            8'h00: instr = 32'h00500093; // addi x1, x0, 5
+            8'h04: instr = 32'h00A00113; // addi x2, x0, 10
+            8'h08: instr = 32'h002081B3; // add  x3, x1, x2  (x3 = 15)
+            8'h0C: instr = 32'h40110233; // sub  x4, x2, x1  (x4 = 5)
+            8'h10: instr = 32'h0020F2B3; // and  x5, x1, x2
+            8'h14: instr = 32'h0020E333; // or   x6, x1, x2
+            default: instr = 32'h00000013; // NOP (addi x0, x0, 0)
+        endcase
+    end
+endmodule
+
+// =============================================================================
+// TU CÓDIGO: CORE RISC-V Y SUBMÓDULOS (Sin cambios)
 // =============================================================================
 
 module single_cycle_rv32i_vr (
@@ -276,7 +294,6 @@ module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, inp
         else if (is_ecall) begin mepc <= pc_current; mcause <= 11; end
         else if (csr_we) case(csr_addr) 12'h305: mtvec <= wdata; 12'h341: mepc <= wdata; 12'h342: mcause <= wdata; endcase
     end
-endmodule
 endmodule
 
      
