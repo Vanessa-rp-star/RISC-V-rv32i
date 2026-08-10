@@ -34,7 +34,7 @@ module tt_um_vanessa_rocha (
     );
 
     // Instanciación del procesador RISC-V
-    single_cycle_rv32i_vr_vanessa (
+    single_cycle_rv32i_vr (
         .clk(clk),
         .reset(reset_cpu),
         .en(ena),
