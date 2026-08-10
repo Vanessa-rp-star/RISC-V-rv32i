@@ -10,7 +10,7 @@ project:
 
   source_files:
     - "tt_um_vanessa_rocha.v"
-  top_module: "tt_um_vanessa_rocha"
+  top_module: "Single_Cycle_RV32I"
 
 pinout:
   # Entradas (ui) - Usadas para el Multiplexor del PC
