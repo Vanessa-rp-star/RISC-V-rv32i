@@ -6,7 +6,7 @@
 
 
 // MÓDULO PRINCIPAL 
-module Single_Cycle_RV32I (
+module tt_um_vanessa_rocha (
     input  wire [7:0] ui_in,    // Entradas dedicadas
     output wire [7:0] uo_out,   // Salidas dedicadas
     input  wire [7:0] uio_in,   // IOs: Entradas
