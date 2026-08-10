@@ -1,13 +1,12 @@
-/*
- * Copyright (c) 2024 Your Name
- * SPDX-License-Identifier: Apache-2.0
- */
-`default_nettype none
 
-// =============================================================================
-// MÓDULO PRINCIPAL (WRAPPER PARA TINY TAPEOUT)
-// =============================================================================
-module tt_um_vanessa_rocha (
+//	Single Cycle RV32I
+//	By: Vanessa RP
+
+
+
+
+// MÓDULO PRINCIPAL 
+module Single_Cycle_RV32I (
     input  wire [7:0] ui_in,    // Entradas dedicadas
     output wire [7:0] uo_out,   // Salidas dedicadas
     input  wire [7:0] uio_in,   // IOs: Entradas
@@ -35,7 +34,7 @@ module tt_um_vanessa_rocha (
     );
 
     // Instanciación del procesador RISC-V
-    single_cycle_rv32i_vr mi_procesador (
+    single_cycle_rv32i_vr(
         .clk(clk),
         .reset(reset_cpu),
         .en(ena),
@@ -87,10 +86,8 @@ module instruction_rom (
     end
 endmodule
 
-// =============================================================================
-// TU CÓDIGO: CORE RISC-V Y SUBMÓDULOS (Sin cambios)
-// =============================================================================
 
+// CORE RISC-V Y SUBMÓDULOS 
 module single_cycle_rv32i_vr (
     input  wire clk,
     input  wire reset,
