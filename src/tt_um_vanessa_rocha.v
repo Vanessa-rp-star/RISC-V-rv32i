@@ -1,11 +1,12 @@
 
-//	Single Cycle RV32I
-//	By: Vanessa RP
+// Single Cycle RV32I
+// By: Vanessa RP
 
 `default_nettype none
 
-
-// MÓDULO PRINCIPAL 
+// =============================================================================
+// MÓDULO PRINCIPAL (WRAPPER PARA TINY TAPEOUT)
+// =============================================================================
 module tt_um_vanessa_rocha (
     input  wire [7:0] ui_in,    // Entradas dedicadas
     output wire [7:0] uo_out,   // Salidas dedicadas
@@ -26,13 +27,13 @@ module tt_um_vanessa_rocha (
     
     // Cable para conectar la ROM al procesador
     wire [31:0] current_instruction;
-    wire [31:0] data_read_from_ram; /// new
+    wire [31:0] data_read_from_ram; 
+
     // Instanciamos la ROM de prueba
     instruction_rom mi_rom (
-        .addr(pc_out[7:0]), // Usamos los 8 bits bajos del PC para buscar la instrucción
+        .addr(pc_out[7:0]), 
         .instr(current_instruction)
     );
-
 
     // Si el pin uio_in[7] está encendido (modo prueba), hacemos XOR de la instrucción 
     // con los pines de entrada. Para la matemática de Yosys, esto significa que la 
@@ -100,10 +101,7 @@ module tt_um_vanessa_rocha (
     wire _unused = &{ui_in[7:6], ui_in[3:2], uio_in[6:0], 1'b0};
 
 endmodule
-//////////////////////////////// ////////////////////////
-    
 
-   
 // =============================================================================
 // MEMORIA ROM DE PRUEBA (Para forzar la síntesis del CPU)
 // =============================================================================
@@ -113,7 +111,6 @@ module instruction_rom (
 );
     always @(*) begin
         case (addr)
-            // Programa de prueba básico que usa suma, resta, AND y OR
             8'h00: instr = 32'h00500093; // addi x1, x0, 5
             8'h04: instr = 32'h00A00113; // addi x2, x0, 10
             8'h08: instr = 32'h002081B3; // add  x3, x1, x2  (x3 = 15)
@@ -124,7 +121,7 @@ module instruction_rom (
         endcase
     end
 endmodule
-///////////////////
+
 // =============================================================================
 // MEMORIA RAM 
 // =============================================================================
@@ -141,7 +138,9 @@ module ram_32bit (
     end
 endmodule
 
+// =============================================================================
 // CORE RISC-V Y SUBMÓDULOS 
+// =============================================================================
 module single_cycle_rv32i_vr (
     input  wire clk,
     input  wire reset,
@@ -346,8 +345,3 @@ module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, inp
         else if (csr_we) case(csr_addr) 12'h305: mtvec <= wdata; 12'h341: mepc <= wdata; 12'h342: mcause <= wdata; endcase
     end
 endmodule
-
-     
-           
-
-
