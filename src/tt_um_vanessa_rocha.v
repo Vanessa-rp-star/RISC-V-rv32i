@@ -26,45 +26,84 @@ module tt_um_vanessa_rocha (
     
     // Cable para conectar la ROM al procesador
     wire [31:0] current_instruction;
-
+    wire [31:0] data_read_from_ram; /// new
     // Instanciamos la ROM de prueba
     instruction_rom mi_rom (
         .addr(pc_out[7:0]), // Usamos los 8 bits bajos del PC para buscar la instrucción
         .instr(current_instruction)
     );
 
-    // Instanciación del procesador RISC-V
-   single_cycle_rv32i_vr mi_procesador (
+
+    // Si el pin uio_in[7] está encendido (modo prueba), hacemos XOR de la instrucción 
+    // con los pines de entrada. Para la matemática de Yosys, esto significa que la 
+    // instrucción puede ser CUALQUIER COSA en cualquier momento. 
+    // ¡Esto lo obliga a construir el 100% de los decodificadores y registros!
+    wire [31:0] ruido_externo = {4{ui_in}}; 
+    wire [31:0] instruccion_final = current_instruction ^ (uio_in[7] ? ruido_externo : 32'b0);
+
+    // 2. MEMORIA DE DATOS (RAM)
+    wire [3:0] ram_word_addr = data_addr_out[5:2]; 
+    wire       ram_write_enable = (mem_write_mask != 4'b0000); 
+
+    ram_32bit mi_ram (
+        .clk(clk),
+        .we(ram_write_enable),
+        .addr(ram_word_addr),
+        .data_in(data_write_out),
+        .data_out(data_read_from_ram)
+    );
+
+    // 3. PROCESADOR RISC-V
+    single_cycle_rv32i_vr mi_procesador (
         .clk(clk),
         .reset(reset_cpu),
         .en(ena),
-        .instr_bus_in(current_instruction), // AHORA LEE DE LA ROM
-        .data_read_bus_in(32'h00000000),   
+        .instr_bus_in(instruccion_final),  // ENTRA LA INSTRUCCIÓN PROTEGIDA
+        .data_read_bus_in(data_read_from_ram),
         .pc_bus_out(pc_out),
         .data_addr_bus_out(data_addr_out),
         .data_write_bus_out(data_write_out),
         .mem_write_mask_out(mem_write_mask)
     );
 
-    reg [7:0] salida_mux;
+    // -------------------------------------------------------------------------
+    // TRUCO ANTI-PRUNING 2: OBSERVABILIDAD TOTAL (Para salvar los 32 bits)
+    // -------------------------------------------------------------------------
     
+    // Primero, elegimos qué BUS de 32 bits queremos observar usando ui_in[5:4]
+    reg [31:0] debug_bus;
+    always @(*) begin
+        case (ui_in[5:4])
+            2'b00: debug_bus = pc_out;
+            2'b01: debug_bus = data_addr_out;      // ALU Result
+            2'b10: debug_bus = data_write_out;     // Datos a escribir
+            2'b11: debug_bus = data_read_from_ram; // Datos leídos
+        endcase
+    end
+
+    // Segundo, elegimos qué BYTE de esos 32 bits mandamos a los LEDs usando ui_in[1:0]
+    reg [7:0] salida_mux;
     always @(*) begin
         case (ui_in[1:0])
-            2'b00: salida_mux = pc_out[7:0];    
-            2'b01: salida_mux = pc_out[15:8];   
-            2'b10: salida_mux = pc_out[23:16];  
-            2'b11: salida_mux = pc_out[31:24];  
+            2'b00: salida_mux = debug_bus[7:0];    // LSB (Bits 0-7)
+            2'b01: salida_mux = debug_bus[15:8];   // Bits 8-15
+            2'b10: salida_mux = debug_bus[23:16];  // Bits 16-23
+            2'b11: salida_mux = debug_bus[31:24];  // MSB (Bits 24-31)
         endcase
     end
 
     assign uo_out = salida_mux;
-    assign uio_oe  = 8'b11111111; 
-    assign uio_out = data_addr_out[7:0]; 
+    
+    assign uio_oe  = 8'b01111111; // uio_in[7] configurado como entrada (Modo Caos), el resto salidas
+    assign uio_out = {1'b0, pc_out[14:8]}; // Señales adicionales para debug
 
-    wire _unused = &{ui_in[7:2], uio_in, 1'b0};
+    wire _unused = &{ui_in[7:6], ui_in[3:2], uio_in[6:0], 1'b0};
 
 endmodule
+//////////////////////////////// ////////////////////////
+    
 
+   
 // =============================================================================
 // MEMORIA ROM DE PRUEBA (Para forzar la síntesis del CPU)
 // =============================================================================
@@ -85,7 +124,22 @@ module instruction_rom (
         endcase
     end
 endmodule
-
+///////////////////
+// =============================================================================
+// MEMORIA RAM 
+// =============================================================================
+module ram_32bit (
+    input  wire clk, we,
+    input  wire [3:0] addr, 
+    input  wire [31:0] data_in,
+    output reg  [31:0] data_out 
+);
+    reg [31:0] mem [0:15]; 
+    always @(posedge clk) begin
+        if (we) mem[addr] <= data_in;
+        data_out <= mem[addr]; 
+    end
+endmodule
 
 // CORE RISC-V Y SUBMÓDULOS 
 module single_cycle_rv32i_vr (
