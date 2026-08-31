@@ -1,5 +1,4 @@
-
-// Single Cycle RV32I
+// Single Cycle RV32I con UART
 // By: Vanessa RP
 
 `default_nettype none
@@ -25,27 +24,32 @@ module tt_um_vanessa_rocha (
     wire [31:0] data_write_out;
     wire [3:0]  mem_write_mask;
     
-    // Cable para conectar la ROM al procesador
     wire [31:0] current_instruction;
     wire [31:0] data_read_from_ram; 
 
-    // Instanciamos la ROM de prueba
+    // 1. instancia ROM
     instruction_rom mi_rom (
         .addr(pc_out[7:0]), 
         .instr(current_instruction)
     );
 
-    // Si el pin uio_in[7] está encendido (modo prueba), hacemos XOR de la instrucción 
-    // con los pines de entrada. Para la matemática de Yosys, esto significa que la 
-    // instrucción puede ser CUALQUIER COSA en cualquier momento. 
-    // ¡Esto lo obliga a construir el 100% de los decodificadores y registros!
+    // TRUCO ANTI-PRUNING 1: Inyección de Caos (Pin uio_in[7])
     wire [31:0] ruido_externo = {4{ui_in}}; 
     wire [31:0] instruccion_final = current_instruction ^ (uio_in[7] ? ruido_externo : 32'b0);
 
-    // 2. MEMORIA DE DATOS (RAM)
-    wire [3:0] ram_word_addr = data_addr_out[5:2]; 
-    wire       ram_write_enable = (mem_write_mask != 4'b0000); 
+   
+    // 2. MEMORIA DE DATOS Y UART (Memory-Mapped I/O)
+  
+    wire is_ram     = (data_addr_out < 32'h00000040);
+    wire is_uart_tx = (data_addr_out == 32'h00000040);
+    wire is_uart_rx = (data_addr_out == 32'h00000044);
 
+    // Habilitadores de escritura separados
+    wire [3:0] ram_word_addr = data_addr_out[5:2]; 
+    wire       ram_write_enable = (mem_write_mask != 4'b0000) && is_ram; 
+    wire       uart_tx_start    = (mem_write_mask != 4'b0000) && is_uart_tx;
+
+    // RAM INTERNA
     ram_32bit mi_ram (
         .clk(clk),
         .we(ram_write_enable),
@@ -54,77 +58,142 @@ module tt_um_vanessa_rocha (
         .data_out(data_read_from_ram)
     );
 
+    // RECEPTOR UART
+    wire [7:0] rx_data;
+    wire rx_done;
+    Receiver_RxD mi_rx (
+        .clk_fpga(clk),
+        .reset(reset_cpu),
+        .RxD(ui_in[0]),          // Pin dedicado a RX
+        .baud_sel(ui_in[3:2]),   // Selección de baudios mediante interruptores
+        .RxData(rx_data),
+        .rx_done(rx_done)
+    );
+
+    // TRANSMISOR UART
+    wire tx_busy;
+    wire tx_pin;
+    Transmitter_TxD mi_tx (
+        .clk_fpga(clk),
+        .reset(reset_cpu),
+        .tx_start(uart_tx_start),
+        .tx_data(data_write_out[7:0]),
+        .baud_sel(ui_in[3:2]),
+        .tx_busy(tx_busy),
+        .TxD(tx_pin)
+    );
+
+    // MUX DE LECTURA DE DATOS AL PROCESADOR
+    wire [31:0] final_data_read;
+    assign final_data_read = is_uart_rx ? {23'b0, rx_done, rx_data} :
+                             is_uart_tx ? {31'b0, tx_busy} :
+                             data_read_from_ram;
+
+   
     // 3. PROCESADOR RISC-V
+
     single_cycle_rv32i_vr mi_procesador (
         .clk(clk),
         .reset(reset_cpu),
         .en(ena),
         .instr_bus_in(instruccion_final),  // ENTRA LA INSTRUCCIÓN PROTEGIDA
-        .data_read_bus_in(data_read_from_ram),
+        .data_read_bus_in(final_data_read), // ENTRAN DATOS DE RAM O UART
         .pc_bus_out(pc_out),
         .data_addr_bus_out(data_addr_out),
         .data_write_bus_out(data_write_out),
         .mem_write_mask_out(mem_write_mask)
     );
 
-    // -------------------------------------------------------------------------
-    // TRUCO ANTI-PRUNING 2: OBSERVABILIDAD TOTAL (Para salvar los 32 bits)
-    // -------------------------------------------------------------------------
+    // TRUCO ANTI-PRUNING 2 Y SEÑALES EXTERNAS
     
-    // Primero, elegimos qué BUS de 32 bits queremos observar usando ui_in[5:4]
     reg [31:0] debug_bus;
     always @(*) begin
         case (ui_in[5:4])
             2'b00: debug_bus = pc_out;
-            2'b01: debug_bus = data_addr_out;      // ALU Result
-            2'b10: debug_bus = data_write_out;     // Datos a escribir
-            2'b11: debug_bus = data_read_from_ram; // Datos leídos
+            2'b01: debug_bus = data_addr_out;      
+            2'b10: debug_bus = data_write_out;     
+            2'b11: debug_bus = final_data_read; 
         endcase
     end
 
-    // Segundo, elegimos qué BYTE de esos 32 bits mandamos a los LEDs usando ui_in[1:0]
     reg [7:0] salida_mux;
     always @(*) begin
         case (ui_in[1:0])
-            2'b00: salida_mux = debug_bus[7:0];    // LSB (Bits 0-7)
-            2'b01: salida_mux = debug_bus[15:8];   // Bits 8-15
-            2'b10: salida_mux = debug_bus[23:16];  // Bits 16-23
-            2'b11: salida_mux = debug_bus[31:24];  // MSB (Bits 24-31)
+            2'b00: salida_mux = debug_bus[7:0];    
+            2'b01: salida_mux = debug_bus[15:8];   
+            2'b10: salida_mux = debug_bus[23:16];  
+            2'b11: salida_mux = debug_bus[31:24];  
         endcase
     end
 
     assign uo_out = salida_mux;
     
-    assign uio_oe  = 8'b01111111; // uio_in[7] configurado como entrada (Modo Caos), el resto salidas
-    assign uio_out = {1'b0, pc_out[14:8]}; // Señales adicionales para debug
+    // uio_in[7] como entrada (xor), el resto salidas.
+    // uio_out[0] se utiliza para transmitir el UART (TxD).
+    assign uio_oe  = 8'b01111111; 
+    assign uio_out = {1'b0, pc_out[14:10], 1'b0, tx_pin}; 
 
-    wire _unused = &{ui_in[7:6], ui_in[3:2], uio_in[6:0], 1'b0};
+    wire _unused = &{ui_in[7:6], ui_in[3:2], uio_in[6:1], 1'b0};
 
 endmodule
 
-// =============================================================================
-// MEMORIA ROM DE PRUEBA (Para forzar la síntesis del CPU)
-// =============================================================================
+// MÓDULOS DE MEMORIA Y UART
+
 module instruction_rom (
     input  wire [7:0] addr,
     output reg  [31:0] instr
 );
     always @(*) begin
         case (addr)
-            8'h00: instr = 32'h00500093; // addi x1, x0, 5
-            8'h04: instr = 32'h00A00113; // addi x2, x0, 10
-            8'h08: instr = 32'h002081B3; // add  x3, x1, x2  (x3 = 15)
-            8'h0C: instr = 32'h40110233; // sub  x4, x2, x1  (x4 = 5)
-            8'h10: instr = 32'h0020F2B3; // and  x5, x1, x2
-            8'h14: instr = 32'h0020E333; // or   x6, x1, x2
-            default: instr = 32'h00000013; // NOP (addi x0, x0, 0)
+            // PRUEBA MATEMÁTICA 
+            8'h00: instr = 32'h00500093; // addi x1, x0, 5    (Carga 5)
+            8'h04: instr = 32'h00A00113; // addi x2, x0, 10   (Carga 10)
+            8'h08: instr = 32'h002081B3; // add  x3, x1, x2   (x3 = 15)
+            8'h0C: instr = 32'h40110233; // sub  x4, x2, x1   (x4 = 5)
+
+            //  CONFIGURACIÓN UART 
+            8'h10: instr = 32'h04000513; // addi x10, x0, 0x40 (x10 = Dirección Tx UART)
+
+            //  'V' (ASCII 0x56) 
+            8'h14: instr = 32'h05600593; // addi x11, x0, 0x56
+            8'h18: instr = 32'h00B52023; // sw   x11, 0(x10)   -> Dispara la 'V'
+            // Bucle de espera (Polling) hasta que termine de enviar 'V'
+            8'h1C: instr = 32'h00052603; // lw   x12, 0(x10)   -> Lee bandera tx_busy
+            8'h20: instr = 32'h00167613; // andi x12, x12, 1   -> Extrae bit 0
+            8'h24: instr = 32'hFE061CE3; // bne  x12, x0, -8   -> Si tx_busy==1, regresa a 0x1C
+
+            // 'A' (ASCII 0x41) 
+            8'h28: instr = 32'h04100593; // addi x11, x0, 0x41
+            8'h2C: instr = 32'h00B52023; // sw   x11, 0(x10)   -> Dispara la 'A'
+            // Bucle de espera
+            8'h30: instr = 32'h00052603; // lw   x12, 0(x10)
+            8'h34: instr = 32'h00167613; // andi x12, x12, 1
+            8'h38: instr = 32'hFE061CE3; // bne  x12, x0, -8
+
+            // ENVIAR 'N' (ASCII 0x4E) 
+            8'h3C: instr = 32'h04E00593; // addi x11, x0, 0x4E
+            8'h40: instr = 32'h00B52023; // sw   x11, 0(x10)   -> Dispara la 'N'
+            // Bucle de espera
+            8'h44: instr = 32'h00052603; // lw   x12, 0(x10)
+            8'h48: instr = 32'h00167613; // andi x12, x12, 1
+            8'h4C: instr = 32'hFE061CE3; // bne  x12, x0, -8
+
+            // ENVIAR 'E' (ASCII 0x45) 
+            8'h50: instr = 32'h04500593; // addi x11, x0, 0x45
+            8'h54: instr = 32'h00B52023; // sw   x11, 0(x10)   -> Dispara la 'E'
+            // Bucle de espera
+            8'h58: instr = 32'h00052603; // lw   x12, 0(x10)
+            8'h5C: instr = 32'h00167613; // andi x12, x12, 1
+            8'h60: instr = 32'hFE061CE3; // bne  x12, x0, -8
+
+            // FASE 3: BUCLE INFINITO 
+            // Evita que el procesador siga leyendo basura y vuelva a empezar
+            8'h64: instr = 32'h00000063; // beq x0, x0, 0      -> PC = PC (Halt)
+
+            default: instr = 32'h00000013; // NOP
         endcase
     end
 endmodule
-
-// =============================================================================
-// MEMORIA RAM 
-// =============================================================================
 module ram_32bit (
     input  wire clk, we,
     input  wire [3:0] addr, 
@@ -135,6 +204,103 @@ module ram_32bit (
     always @(posedge clk) begin
         if (we) mem[addr] <= data_in;
         data_out <= mem[addr]; 
+    end
+endmodule
+
+module Receiver_RxD(
+    input wire clk_fpga, reset, RxD,
+    input wire [1:0] baud_sel,  
+    output wire [7:0] RxData, 
+    output reg rx_done
+);
+    reg [15:0] SYMBOL_CNT;
+    wire [15:0] SAMPLE_POINT = SYMBOL_CNT >> 1; 
+
+    always @(*) begin
+        case(baud_sel)
+            2'b00: SYMBOL_CNT = 16'd10416; // 9600 baudios
+            2'b01: SYMBOL_CNT = 16'd5208;  // 19200 baudios
+            2'b10: SYMBOL_CNT = 16'd2604;  // 38400 baudios
+            2'b11: SYMBOL_CNT = 16'd1736;  // 57600 baudios
+        endcase
+    end
+
+    reg [15:0] baud_cnt; 
+    reg [3:0] bit_ptr;
+    reg [7:0] rx_reg;    
+    reg [1:0] state;
+
+    assign RxData = rx_reg;
+
+    always @(posedge clk_fpga) begin
+        if (reset) begin
+            state <= 0; rx_done <= 0; baud_cnt <= 0; bit_ptr <= 0; rx_reg <= 0;
+        end else begin
+            rx_done <= 0;
+            case (state)
+                0: begin 
+                    if (RxD == 0) begin
+                        if (baud_cnt == SAMPLE_POINT) begin state <= 1; baud_cnt <= 0; bit_ptr <= 0; end 
+                        else baud_cnt <= baud_cnt + 1;
+                    end else baud_cnt <= 0;
+                end
+                1: begin 
+                    if (baud_cnt == SYMBOL_CNT - 1) begin
+                        baud_cnt <= 0; rx_reg[bit_ptr] <= RxD;
+                        if (bit_ptr == 7) state <= 2; else bit_ptr <= bit_ptr + 1;
+                    end else baud_cnt <= baud_cnt + 1;
+                end
+                2: begin 
+                    if (baud_cnt == SYMBOL_CNT - 1) begin state <= 0; baud_cnt <= 0; rx_done <= 1; end 
+                    else baud_cnt <= baud_cnt + 1;
+                end
+                default: state <= 0;
+            endcase
+        end
+    end
+endmodule
+
+module Transmitter_TxD(
+    input wire clk_fpga, reset, tx_start, 
+    input wire [7:0] tx_data,
+    input wire [1:0] baud_sel, 
+    output reg tx_busy, TxD
+);
+    reg [15:0] div_counter;
+    always @(*) begin
+        case(baud_sel)
+            2'b00: div_counter = 16'd10416; // 9600
+            2'b01: div_counter = 16'd5208;  // 19200
+            2'b10: div_counter = 16'd2604;  // 38400
+            2'b11: div_counter = 16'd1736;  // 57600
+        endcase
+    end
+
+    reg [3:0] bit_counter; 
+    reg [15:0] baudrate_counter;
+    reg [9:0] shift_reg;   
+    reg state;
+
+    always @(posedge clk_fpga) begin
+        if (reset) begin state <= 0; TxD <= 1; tx_busy <= 0; baudrate_counter <= 0; bit_counter <= 0; end 
+        else begin
+            case (state)
+                0: begin
+                    tx_busy <= 0; TxD <= 1;
+                    if (tx_start) begin
+                        state <= 1; tx_busy <= 1; shift_reg <= {1'b1, tx_data, 1'b0}; 
+                        baudrate_counter <= 0; bit_counter <= 0;
+                    end
+                end
+                1: begin
+                    tx_busy <= 1;
+                    if (baudrate_counter >= div_counter - 1) begin
+                        baudrate_counter <= 0; TxD <= shift_reg[0]; shift_reg <= {1'b1, shift_reg[9:1]};
+                        if (bit_counter == 9) state <= 0; else bit_counter <= bit_counter + 1;
+                    end else baudrate_counter <= baudrate_counter + 1;
+                end
+            endcase
+        end
     end
 endmodule
 
@@ -334,7 +500,7 @@ module load_unit (input [2:0] funct3, input [31:0] ReadData, input [1:0] byte_se
     end
 endmodule
 
-module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, input [2:0] funct3, input csr_we, input [31:0] pc_current, input is_ecall, is_mret, external_interrupt, pc_misaligned, output reg [31:0] rdata, trap_pc, output trap_taken);
+module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, input [2:0] funct3, input csr_we, input [31:0] pc_current, input is_ecall, is_mret, external_interrupt, pc_misaligned, output reg [31:0] rdata, output wire [31:0] trap_pc, output wire trap_taken);
     reg [31:0] mtvec, mepc, mcause;
     assign trap_taken = is_ecall | is_mret | external_interrupt | pc_misaligned;
     assign trap_pc = is_mret ? mepc : mtvec;
