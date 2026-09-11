@@ -1,44 +1,42 @@
 yaml_version: 6
 project:
-  title: "RISC-V 32-bit Single-Cycle Core"
+  title: "RISC-V 32-bit Single-Cycle"
   author: "Vanessa Rocha Perez"
-  description: "32-bit RISC-V ."
+  description: "Procesador RV32I de ciclo unico"
   language: "Verilog"
-  clock_hz: 50000000
-
+  clock_hz: 20000000
+ 
   tiles: "4x2"
-
+ 
   source_files:
-    - "tt_um_vanessa_rocha.v"
-  top_module: "tt_um_vanessa_rocha"
-
+    - "tt_um_vanessa_riscv.v"
+  top_module: "tt_um_vanessa_riscv"
+ 
 pinout:
-  # Entradas (ui) - Usadas para el Multiplexor del PC
-  ui[0]: "Mux_Sel_0 (Select PC Byte)"
-  ui[1]: "Mux_Sel_1 (Select PC Byte)"
-  ui[2]: "Unused"
-  ui[3]: "Unused"
-  ui[4]: "Unused"
-  ui[5]: "Unused"
-  ui[6]: "Unused"
-  ui[7]: "Unused"
-
-  # Salidas (uo) - Muestra 1 byte del Program Counter (PC) a la vez
-  uo[0]: "PC_Out_Bit0"
-  uo[1]: "PC_Out_Bit1"
-  uo[2]: "PC_Out_Bit2"
-  uo[3]: "PC_Out_Bit3"
-  uo[4]: "PC_Out_Bit4"
-  uo[5]: "PC_Out_Bit5"
-  uo[6]: "PC_Out_Bit6"
-  uo[7]: "PC_Out_Bit7"
-
-  # Bidireccionales (uio) - Configurados como salidas para la Dirección de Memoria/ALU
-  uio[0]: "Data_Addr_Bit0"
-  uio[1]: "Data_Addr_Bit1"
-  uio[2]: "Data_Addr_Bit2"
-  uio[3]: "Data_Addr_Bit3"
-  uio[4]: "Data_Addr_Bit4"
-  uio[5]: "Data_Addr_Bit5"
-  uio[6]: "Data_Addr_Bit6"
-  uio[7]: "Data_Addr_Bit7"
+  ui[0]: "GPIO-in (leible en 0x50 por software)"
+  ui[1]: "GPIO-in (leible en 0x50 por software)"
+  ui[2]: "GPIO-in (leible en 0x50 por software)"
+  ui[3]: "UART RX"
+  ui[4]: "GPIO-in (leible en 0x50 por software)"
+  ui[5]: "GPIO-in (leible en 0x50 por software)"
+  ui[6]: "GPIO-in (leible en 0x50 por software)"
+  ui[7]: "GPIO-in (leible en 0x50 por software)"
+ 
+  uo[0]: "PC[0] (debug)"
+  uo[1]: "PC[1] (debug)"
+  uo[2]: "PC[2] (debug)"
+  uo[3]: "PC[3] (debug)"
+  uo[4]: "UART TX"
+  uo[5]: "tx_busy (status)"
+  uo[6]: "loading (status: 1=recibiendo programa)"
+  uo[7]: "state (status: 0=LOAD, 1=RUN)"
+ 
+  uio[0]: "SPI CS_n (salida)"
+  uio[1]: "SPI MOSI (salida)"
+  uio[2]: "SPI MISO (entrada)"
+  uio[3]: "SPI SCK (salida)"
+  uio[4]: "No usado"
+  uio[5]: "No usado"
+  uio[6]: "No usado"
+  uio[7]: "No usado"
+ 
