@@ -55,8 +55,14 @@ from cocotb.triggers import ClockCycles, Timer, RisingEdge, FallingEdge
  
 CLK_FREQ_HZ = 2_000_000      # debe coincidir con el override del Makefile
 BAUD_RATE   = 115200
-BIT_NS      = round(1e9 / BAUD_RATE)   # duracion de un bit UART, en ns
+# CRITICO: usar division ENTERA, exactamente como lo hace el modulo Verilog
+# (localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;). Si aqui se usara la
+# formula "ideal" 1e9/BAUD_RATE, el testbench se desincroniza del receptor
+# real en unos pocos nanosegundos por bit -- poco por byte, pero se acumula
+# sin control a lo largo de los 256 bytes del bootloader.
 CLK_PERIOD_NS = round(1e9 / CLK_FREQ_HZ)
+CLKS_PER_BIT  = CLK_FREQ_HZ // BAUD_RATE
+BIT_NS        = CLKS_PER_BIT * CLK_PERIOD_NS
  
 RX_BIT = 3   # ui_in[3]
 TX_BIT = 4   # uo_out[4]
