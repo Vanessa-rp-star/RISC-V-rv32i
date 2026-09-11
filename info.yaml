@@ -6,7 +6,7 @@ project:
   language: "Verilog"
   clock_hz: 20000000
  
-  tiles: "4x2"
+  tiles: "8x2"
  
   source_files:
     - "tt_um_vanessa_riscv.v"
