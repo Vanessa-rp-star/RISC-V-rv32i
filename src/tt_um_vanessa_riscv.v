@@ -7,26 +7,24 @@
 // MÓDULO PRINCIPAL (WRAPPER PARA TINY TAPEOUT)
 // =============================================================================
 module tt_um_vanessa_riscv #(
-    // -------------------------------------------------------------------
-    // Parametros de plataforma para el board de Tiny Tapeout:
-    //
-    // CLK_FREQ_HZ = 20 MHz.
+   
     parameter CLK_FREQ_HZ = 20_000_000,
     parameter BAUD_RATE   = 115200
 ) (
-    // ---- Pinout fisico en el board de Tiny Tapeout 
-    // ui_in[3]  = UART RX: conectar al pin TX del adaptador USB-Serial
+    // ---- Pinout fisico en el board de Tiny Tapeout ----
+    // ui_in[3]  = UART RX: conectar al pin TX de tu adaptador USB-Serial
+    //            
     input  wire [7:0] ui_in,
     // uo_out[4] = UART TX: conectar al pin RX de tu adaptador USB-Serial.
     //             uo_out[7]=modo(1=RUN) [6]=cargando [5]=tx_busy
-    //             [3:0]=PC
+    //             [3:0]=PC bajo
     output wire [7:0] uo_out,
     // uio_in[2] = SPI MISO (entrada, desde el periferico SPI externo)
     input  wire [7:0] uio_in,
     // uio_out[0]=CS  uio_out[1]=MOSI  uio_out[3]=SCK  (convencion Pmod SPI
     // estandar: CS,MOSI,MISO,SCK en la fila del header). Conectar al header
-    // PMOD "standard" de la demoboard ( spec de Digilent) 
-    //  un Pmod SPI real; para loopback, puente MOSI<->MISO.
+    // PMOD "standard" de la demoboard (sigue el spec de Digilent) 
+    // usar un Pmod SPI real; para loopback de prueba, puente MOSI<->MISO.
     output wire [7:0] uio_out,
     output wire [7:0] uio_oe,
     input  wire        ena,
@@ -36,7 +34,10 @@ module tt_um_vanessa_riscv #(
  
     localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
  
-    localparam INSTR_DEPTH = 64;  // 64 instrucciones de 32b = 256 bytes de programa
+    localparam INSTR_DEPTH = 24;  // 24 instrucciones de 32b = 96 bytes de programa
+    // NOTA: reducido de 64 a 24 para bajar el conteo de flip-flops de la
+    // memoria de instrucciones (64->24 palabras ahorra (64-24)*32=1280
+    
     localparam DATA_DEPTH  = 16;  // 16 words de 32b = 64 bytes de datos
     localparam IAWIDTH = $clog2(INSTR_DEPTH);
     localparam DAWIDTH = $clog2(DATA_DEPTH);
@@ -75,13 +76,7 @@ module tt_um_vanessa_riscv #(
         .rx_done(rx_done)
     );
  
-    // rx_done crudo dura solo 1 ciclo de clk: un bucle de polling en software
-    // podria perderselo. En vez de "estirarlo" por tiempo (fragil: puede
-    // quedar prendido mas de una vuelta de bucle y causar ecos duplicados),
-    // usamos una bandera de nivel que el SOFTWARE apaga explicitamente al
-    // consumir el dato (escribiendo cualquier valor a 0x44). Tambien se
-    // fuerza a 0 durante todo LOAD para que ningun byte del bootloader deje
-    // residuo visible al arrancar RUN.
+  
     reg rx_flag;
     always @(posedge clk) begin
         if (sys_rst || state == S_LOAD)
@@ -200,7 +195,7 @@ module tt_um_vanessa_riscv #(
         .cs_n   (spi_cs_n)
     );
  
-    // ---- Mux de lectura de datos hacia el CPU ----
+    //  Mux de lectura de datos hacia el CPU 
     wire [31:0] final_data_read =
         is_uart_rx  ? {23'b0, rx_flag, rx_data}       :
         is_uart_tx  ? {31'b0, tx_busy}                :
@@ -208,9 +203,9 @@ module tt_um_vanessa_riscv #(
         is_gpio_in  ? {24'b0, ui_in}                  :
                       data_read_from_ram;
  
-    // =====================================================================
-    // Procesador RISC-V (fetch/lectura de datos combinacionales -> ciclo unico)
-    // =====================================================================
+
+    // Procesador RISC-V (fetch/lectura de datos combinacionales 
+ 
     single_cycle_rv32i_vr mi_procesador (
         .clk               (clk),
         .reset             (cpu_reset),
@@ -223,7 +218,7 @@ module tt_um_vanessa_riscv #(
         .mem_write_mask_out(mem_write_mask)
     );
  
-    // =====================================================================
+
     // Salidas fisicas
     // =====================================================================
     // uo_out[7]=modo(1=RUN) [6]=cargando [5]=tx_busy [4]=UART TX [3:0]=PC bajo
@@ -501,10 +496,8 @@ module spi_master #(
 endmodule
  
  
-// =============================================================================
-// CORE RISC-V (datapath de ciclo unico real: fetch y lectura de datos
-// combinacionales, solo PC/regfile/memorias se actualizan en flanco de reloj)
-// =============================================================================
+
+// CORE RISC-V 
 module single_cycle_rv32i_vr (
     input  wire clk,
     input  wire reset,
@@ -696,4 +689,3 @@ module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, inp
         else if (csr_we) case(csr_addr) 12'h305: mtvec <= wdata; 12'h341: mepc <= wdata; 12'h342: mcause <= wdata; endcase
     end
 endmodule
- 
