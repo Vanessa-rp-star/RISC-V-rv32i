@@ -4,7 +4,7 @@ project:
   author: "Vanessa Rocha Perez"
   description: "Procesador RV32I de ciclo unico"
   language: "Verilog"
-  clock_hz: 20000000
+  clock_hz: 10000000
  
   tiles: "6x2"
  
