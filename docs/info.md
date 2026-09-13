@@ -1,37 +1,24 @@
-# 4-bit ALU
-
-## Description
-This project implements a simple 4-bit Arithmetic Logic Unit (ALU) capable of performing arithmetic and logical operations between two 4-bit operands.
-
 ## How it works
-The ALU receives two 4-bit inputs:
-- A = ui_in[3:0]
-- B = ui_in[7:4]
+Este proyecto es un procesador RISC-V RV32I de ciclo unico, programable por UART en tiempo real -- no tiene ninguna instruccion pregrabada en el silicio. El chip arranca en modo de carga (LOAD), esperando recibir un programa completo por UART; una vez recibido, pasa a modo de ejecucion (RUN) y corre ese programa exactamente igual que cualquier microprocesador de ciclo unico convencional (un ciclo de reloj por instruccion, sin segmentacion).
 
-The operation is selected using:
-- op = uio_in[2:0]
+Implementa el set de instrucciones RV32I completo (aritmetica y logica de registro-registro y registro-inmediato, desplazamientos, comparaciones con y sin signo, saltos y branches, cargas y almacenamientos de byte/media palabra/palabra completa, lui/auipc), ademas de dos perifericos mapeados en memoria:
 
-Supported operations:
-- 000 → Addition (A + B)
-- 001 → Subtraction (A - B)
-- 010 → Bitwise AND
-- 011 → Bitwise OR
-- 100 → Bitwise XOR
-- 101 → Less-than comparison (A < B)
+UART: usado tanto para cargar el programa (bootloader) como, una vez el programa esta corriendo, para que el software transmita y reciba datos en tiempo real (direcciones 0x40 TX y 0x44 RX).
+SPI maestro (modo 0, 8 bits): permite que el software hable con un periferico SPI externo (direccion 0x48).
 
-The result is displayed on:
-- uo_out[7:0]
+Todo el diseño fue validado de forma exhaustiva en una FPGA Basys3 antes de esta sintesis: las 37 instrucciones del set se probaron individualmente, junto con pruebas de estres (generacion de Fibonacci), interaccion UART en tiempo real (calculadoras interactivas por teclado), y el periferico SPI en loopback fisico.
+
+Carga un programa por UART (8N1, 115200 baudios) al pin de RX del proyecto: exactamente INSTR_DEPTH palabras de 32 bits (ver info.yaml para el numero exacto), enviadas byte por byte, LSB primero por palabra.
+El chip transiciona automaticamente a modo RUN al recibir la ultima palabra (visible en uo_out[7]).
+El programa cargado puede leer/escribir UART y SPI usando los registros mapeados en memoria (0x40, 0x44, 0x48), y leer entradas de proposito general en 0x50.
+Los resultados que el programa transmita por UART TX se reciben en cualquier terminal serial (por ejemplo RealTerm) conectada al mismo puerto.
 
 ## How to test
-1. Set operand A using `ui_in[3:0]`
-2. Set operand B using `ui_in[7:4]`
-3. Select the operation using `uio_in[2:0]`
-4. Observe the output on `uo_out[7:0]`
+Carga un programa por UART (8N1, 115200 baudios) al pin de RX del proyecto: exactamente INSTR_DEPTH palabras de 32 bits (ver info.yaml para el numero exacto), enviadas byte por byte, LSB primero por palabra.
+El chip transiciona automaticamente a modo RUN al recibir la ultima palabra (visible en uo_out[7]).
+El programa cargado puede leer/escribir UART y SPI usando los registros mapeados en memoria (0x40, 0x44, 0x48), y leer entradas de proposito general en 0x50.
+Los resultados que el programa transmita por UART TX se reciben en cualquier terminal serial (por ejemplo RealTerm) conectada al mismo puerto.
 
-Example:
-- A = 5
-- B = 3
-- op = 000
-
-Expected result:
-- uo_out = 8
+External hardware
+Un adaptador USB-Serial (o el propio USB del board de desarrollo si se usa passthrough) para hablar con el pin de UART.
+Opcionalmente, un periferico SPI (memoria, display, sensor) conectado a uio[0:3] siguiendo la convencion estandar de Pmod (CS, MOSI, MISO, SCK).
