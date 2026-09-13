@@ -1,42 +1,38 @@
-![](../../workflows/gds/badge.svg) ![](../../workflows/docs/badge.svg) ![](../../workflows/test/badge.svg) ![](../../workflows/fpga/badge.svg)
+RISC-V RV32I de ciclo unico, programable por UART -- Tiny Tapeout
 
-# Tiny Tapeout Verilog Project Template
+Procesador RISC-V de 32 bits, arquitectura de ciclo unico (una instruccion por ciclo de reloj, sin segmentacion), que implementa el set de instrucciones RV32I completo. A diferencia de un diseño con memoria de programa pregrabada, este chip recibe el codigo maquina a ejecutar desde el exterior, en tiempo real, por UART -- no hay ninguna instruccion fija grabada en el silicio.
 
-- [Read the documentation for project](docs/info.md)
+Incluye ademas un periferico SPI maestro (modo 0, 8 bits) mapeado en memoria, para que el software que se le cargue pueda comunicarse con dispositivos externos (memorias, displays, sensores) una vez en ejecucion.
 
-## What is Tiny Tapeout?
+📄 Lee la documentacion completa del proyecto (datasheet)
 
-Tiny Tapeout is an educational project that aims to make it easier and cheaper than ever to get your digital and analog designs manufactured on a real chip.
+Como funciona
 
-To learn more and get started, visit https://tinytapeout.com.
+El chip arranca en modo LOAD, esperando recibir por UART un programa completo (el numero exacto de instrucciones de 32 bits depende de la configuracion, ver info.yaml). Al completar la carga, transiciona automaticamente a modo RUN y ejecuta el programa como cualquier procesador de ciclo unico convencional. El mismo canal UART sigue disponible durante la ejecucion para que el software transmita y reciba datos (por ejemplo, resultados de calculos), y un periferico SPI mapeado en memoria permite hablar con hardware externo.
 
-## Set up your Verilog project
+Detalle tecnico completo, mapa de memoria, y pinout: ver docs/info.md.
 
-1. Add your Verilog files to the `src` folder.
-2. Edit the [info.yaml](info.yaml) and update information about your project, paying special attention to the `source_files` and `top_module` properties. If you are upgrading an existing Tiny Tapeout project, check out our [online info.yaml migration tool](https://tinytapeout.github.io/tt-yaml-upgrade-tool/).
-3. Edit [docs/info.md](docs/info.md) and add a description of your project.
-4. Adapt the testbench to your design. See [test/README.md](test/README.md) for more information.
+Validacion
 
-The GitHub action will automatically build the ASIC files using [LibreLane](https://www.zerotoasiccourse.com/terminology/librelane/).
+Antes de la sintesis, el diseño fue validado exhaustivamente en una FPGA (Basys3/Artix-7):
 
-## Enable GitHub actions to build the results page
+Las 37 instrucciones del set implementado, probadas individualmente y por categoria (aritmetica/logica, desplazamientos, comparaciones con y sin signo, saltos y branches, cargas/almacenamientos de byte/media palabra/palabra).
+UART en tiempo real: carga de programas, y lectura/escritura interactiva desde el software en ejecucion (incluye una calculadora interactiva por teclado).
+SPI maestro validado en loopback fisico.
+Una prueba de estres (generacion iterativa de la serie de Fibonacci).
 
-- [Enabling GitHub Pages](https://tinytapeout.com/faq/#my-github-action-is-failing-on-the-pages-part)
+La misma bateria de pruebas se reproduce automaticamente en simulacion mediante cocotb (ver test/), tanto a nivel RTL como -- automaticamente, en cada build del GDS -- a nivel gate-level contra el netlist ya sintetizado.
 
-## Resources
+Estructura del repositorio
+src/ -- Verilog del procesador (tt_um_vanessa_riscv.v) y configuracion de sintesis (config.json).
+test/ -- Testbench de cocotb.
+docs/info.md -- Documentacion del proyecto (genera el datasheet).
+info.yaml -- Metadatos del proyecto para Tiny Tapeout (pinout, reloj, tiles).
+Sobre Tiny Tapeout
 
-- [FAQ](https://tinytapeout.com/faq/)
-- [Digital design lessons](https://tinytapeout.com/digital_design/)
-- [Learn how semiconductors work](https://tinytapeout.com/siliwiz/)
-- [Join the community](https://tinytapeout.com/discord)
-- [Build your design locally](https://www.tinytapeout.com/guides/local-hardening/)
+Este proyecto fue construido y enviado a fabricar a traves de Tiny Tapeout, un proyecto educativo que facilita fabricar tus propios diseños digitales y analogicos en un chip real.
 
-## What next?
-
-- [Submit your design to the next shuttle](https://app.tinytapeout.com/).
-- Edit [this README](README.md) and explain your design, how it works, and how to test it.
-- Share your project on your social network of choice:
-  - LinkedIn [#tinytapeout](https://www.linkedin.com/search/results/content/?keywords=%23tinytapeout) [@TinyTapeout](https://www.linkedin.com/company/100708654/)
-  - Mastodon [#tinytapeout](https://chaos.social/tags/tinytapeout) [@matthewvenn](https://chaos.social/@matthewvenn)
-  - X (formerly Twitter) [#tinytapeout](https://twitter.com/hashtag/tinytapeout) [@tinytapeout](https://twitter.com/tinytapeout)
-  - Bluesky [@tinytapeout.com](https://bsky.app/profile/tinytapeout.com)
+Recursos
+FAQ de Tiny Tapeout
+Guia de diseño digital
+Comunidad en Discord
