@@ -8,7 +8,7 @@
 // =============================================================================
 module tt_um_vanessa_riscv #(
    
-    parameter CLK_FREQ_HZ = 20_000_000,
+    parameter CLK_FREQ_HZ = 10_000_000,
     parameter BAUD_RATE   = 115200
 ) (
     // ---- Pinout fisico en el board de Tiny Tapeout ----
