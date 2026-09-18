@@ -6,7 +6,7 @@ project:
   language: "Verilog"
   clock_hz: 10000000
  
-  tiles: "6x2"
+  tiles: "4x2"
  
   source_files:
     - "tt_um_vanessa_riscv.v"
@@ -25,11 +25,11 @@ pinout:
   uo[0]: "PC[0] (debug)"
   uo[1]: "PC[1] (debug)"
   uo[2]: "PC[2] (debug)"
-  uo[3]: "PC[3] (debug)"
-  uo[4]: "UART TX"
-  uo[5]: "tx_busy (status)"
-  uo[6]: "loading (status: 1=recibiendo programa)"
-  uo[7]: "state (status: 0=LOAD, 1=RUN)"
+  uo[3]: "UART TX pin (estado de la linea)"
+  uo[4]: "tx_busy (status)"
+  uo[5]: "loading_any (status: 1=recibiendo programa, sea por UART o por SPI)"
+  uo[6]: "mode[0] (00=LOAD, 01=RUN, 10=BLOCKLOAD)"
+  uo[7]: "mode[1]"
  
   uio[0]: "SPI CS_n (salida)"
   uio[1]: "SPI MOSI (salida)"
