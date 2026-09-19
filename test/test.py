@@ -2,7 +2,7 @@ import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, Timer, RisingEdge
  
-CLK_FREQ_HZ = 10_000_000    
+CLK_FREQ_HZ = 10_000_000     # frecuencia real del chip (ver info.yaml/config.json)
 BAUD_RATE   = 115200
 CLK_PERIOD_NS = round(1e9 / CLK_FREQ_HZ)
 CLKS_PER_BIT  = CLK_FREQ_HZ // BAUD_RATE
@@ -12,9 +12,9 @@ INSTR_DEPTH  = 8
 BLOCK_WORDS  = INSTR_DEPTH
 BLOCK_BYTES  = INSTR_DEPTH * 4      # 32
  
-RX_BIT   = 3   # ui_in[3]          
-TX_BIT   = 3   # uo_out[3]          
-TXBUSY_BIT = 4 # uo_out[4]          
+RX_BIT   = 3   # ui_in[3]           -- sin cambios respecto al diseño de 24
+TX_BIT   = 3   # uo_out[3]          -- CAMBIO: antes uo_out[4]
+TXBUSY_BIT = 4 # uo_out[4]          -- CAMBIO: antes no se usaba en el test
  
 # uio_out: bit0=cs_n, bit1=mosi, bit3=sclk (salidas del maestro SPI)
 # uio_in:  bit2=miso (entrada al chip, la maneja el esclavo emulado)
@@ -23,10 +23,15 @@ SPI_MOSI_BIT = 1
 SPI_SCLK_BIT = 3
 SPI_MISO_BIT = 2
  
-
+# CLK_DIV del spi_burst_master instanciado en tt_um_vanessa_riscv.v
+# (mi_spi_burst #(.CLK_DIV(4))). Cada bit de SPI tarda 2*CLK_DIV ciclos de
+# clk (medio periodo de sclk = CLK_DIV ciclos, sclk tiene 2 flancos por
+# bit). Una recarga de bloque completa transmite 24 bits de encabezado
+# (comando + direccion) + BLOCK_BYTES*8 bits de datos.
 SPI_CLK_DIV = 4
 SPI_BITS_PER_BLOCK = 24 + BLOCK_BYTES * 8
 SPI_RELOAD_CYCLES = SPI_BITS_PER_BLOCK * 2 * SPI_CLK_DIV   # 2240 ciclos = 224us a 10MHz
+ 
 
 UART_BYTE_TIMEOUT_CYCLES = SPI_RELOAD_CYCLES * 2 + 2000  # margen amplio
  
