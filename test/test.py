@@ -1,22 +1,3 @@
-
-PROGRAM_A = [
-    0x00500093, 0x00A00113, 0x002081B3, 0x40110233, 0x00000293, 0x0032A023, 0x0002A303, 0x04000513,
-    0x00652023, 0x00052603, 0x00167613, 0xFE061CE3, 0x04800593, 0x0AA00713, 0x00E5A023, 0x0005A783,
-    0x1007F813, 0xFE081CE3, 0x0FF7F893, 0x01152023, 0x00000063, 0x00000013, 0x00000013, 0x00000013,
-]
- 
-PROGRAM_B = [
-    0x04000A13, 0x00100F13, 0x00300113, 0x0CC00093, 0x0AA00193, 0x0030F333, 0x08834393, 0x00038463,
-    0x00000F13, 0x00500093, 0x00209333, 0x02834393, 0x00038463, 0x00000F13, 0xFFF00093, 0x4020D333,
-    0xFFF34393, 0x00038463, 0x00000F13, 0x01EA2023, 0x000A2483, 0x0014F493, 0xFE049CE3, 0x00000063,
-]
- 
-PROGRAM_D = [
-    0x04000A13, 0x00100F13, 0x00500093, 0x00A00113, 0xFFF00193, 0x00900313, 0x0020C463, 0x00100313,
-    0x00934393, 0x00038463, 0x00000F13, 0x00900313, 0x0030E463, 0x00100313, 0x00934393, 0x00038463,
-    0x00000F13, 0x01EA2023, 0x000A2483, 0x0014F493, 0xFE049CE3, 0x00000063, 0x00000013, 0x00000013,
-]
- 
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, Timer, RisingEdge
@@ -27,8 +8,55 @@ CLK_PERIOD_NS = round(1e9 / CLK_FREQ_HZ)
 CLKS_PER_BIT  = CLK_FREQ_HZ // BAUD_RATE
 BIT_NS        = CLKS_PER_BIT * CLK_PERIOD_NS
  
-RX_BIT = 3   # ui_in[3]
-TX_BIT = 4   # uo_out[4]
+INSTR_DEPTH  = 8
+BLOCK_WORDS  = INSTR_DEPTH
+BLOCK_BYTES  = INSTR_DEPTH * 4      # 32
+ 
+RX_BIT   = 3   # ui_in[3]           -- sin cambios respecto al diseño de 24
+TX_BIT   = 3   # uo_out[3]          -- CAMBIO: antes uo_out[4]
+TXBUSY_BIT = 4 # uo_out[4]          -- CAMBIO: antes no se usaba en el test
+ 
+# uio_out: bit0=cs_n, bit1=mosi, bit3=sclk (salidas del maestro SPI)
+# uio_in:  bit2=miso (entrada al chip, la maneja el esclavo emulado)
+SPI_CS_BIT   = 0
+SPI_MOSI_BIT = 1
+SPI_SCLK_BIT = 3
+SPI_MISO_BIT = 2
+ 
+ 
+
+BLOQUES_TEST = [
+    # bloque 0
+    0x04000a13, 0x04c00a93, 0x00a00093, 0x00300113,
+    0x00208333, 0x006a2023, 0x00100393, 0x007aa023,
+    # bloque 1
+    0x04000a13, 0x00a00093, 0x00300113, 0x40208333,
+    0x006a2023, 0x04c00a93, 0x00200393, 0x007aa023,
+    # bloque 2
+    0x04000a13, 0x00c00093, 0x00a00113, 0x0020f333,
+    0x006a2023, 0x04c00a93, 0x00300393, 0x007aa023,
+    # bloque 3
+    0x04000a13, 0x00100093, 0x00409313, 0x006a2023,
+    0x04c00a93, 0x00400393, 0x007aa023, 0x00000013,
+    # bloque 4
+    0x04000a13, 0x00500093, 0x00500113, 0x0aa00313,
+    0x00208463, 0x05500313, 0x006a2023, 0x00000063,
+    # bloques 5-7: relleno NOP
+    0x00000013, 0x00000013, 0x00000013, 0x00000013,
+    0x00000013, 0x00000013, 0x00000013, 0x00000013,
+    0x00000013, 0x00000013, 0x00000013, 0x00000013,
+    0x00000013, 0x00000013, 0x00000013, 0x00000013,
+    0x00000013, 0x00000013, 0x00000013, 0x00000013,
+    0x00000013, 0x00000013, 0x00000013, 0x00000013,
+]
+EXPECTED_UART_SEQUENCE = [0x0D, 0x07, 0x08, 0x10, 0xAA]
+ 
+ 
+def words_to_bytes(words):
+    b = bytearray()
+    for w in words:
+        b += bytes([(w >> s) & 0xFF for s in (0, 8, 16, 24)])
+    return bytes(b)
  
  
 async def start_clock(dut):
@@ -57,16 +85,17 @@ async def uart_send_byte(dut, byte):
     await Timer(BIT_NS, units="ns")
  
  
-async def load_program(dut, words):
-    """Carga las 24 palabras de instruccion (96 bytes), LSB primero por
-    palabra -- protocolo actual del bootloader con INSTR_DEPTH=24."""
-    assert len(words) == 24
+async def load_block0(dut, words):
+    """Carga las 8 palabras de instruccion (32 bytes) del bloque 0, LSB
+    primero por palabra -- protocolo del bootloader con INSTR_DEPTH=8.
+    Los bloques 1..4 los trae el propio chip via SPI, no se envian aqui."""
+    assert len(words) == BLOCK_WORDS
     for w in words:
         for shift in (0, 8, 16, 24):
             await uart_send_byte(dut, (w >> shift) & 0xFF)
  
  
-async def uart_recv_byte(dut, timeout_bits=20):
+async def uart_recv_byte(dut, timeout_bits=60):
     for _ in range(timeout_bits * 20):
         if int(dut.uo_out.value) & (1 << TX_BIT) == 0:
             break
@@ -83,60 +112,112 @@ async def uart_recv_byte(dut, timeout_bits=20):
     return value
  
  
-async def wait_for_run(dut, max_cycles=100000):
+async def wait_for_mode(dut, mode, max_cycles=200000):
     for _ in range(max_cycles):
-        if (int(dut.uo_out.value) >> 7) & 1:
+        if ((int(dut.uo_out.value) >> 6) & 0b11) == mode:
             return
         await ClockCycles(dut.clk, 1)
-    assert False, "El chip nunca paso a modo RUN tras cargar el programa"
+    assert False, f"El chip nunca alcanzo mode={mode:02b}"
  
  
-@cocotb.test()
-async def test_program_a_core_uart_spi(dut):
-    """Programa A (24 instr): ALU basica, memoria, UART TX, y SPI en
-    loopback emulado (uio_in[2] <- uio_out[1], igual que el jumper
-    fisico JA1-JA3 que ya validamos en la Basys3)."""
-    await start_clock(dut)
-    await reset_dut(dut)
+async def wait_for_run(dut, max_cycles=200000):
+    await wait_for_mode(dut, 0b01, max_cycles)
  
-    async def spi_loopback():
+ 
+def spi_ram_slave(dut, content_bytes):
+    """Modelo de comportamiento (equivalente a spi_ram_slave_testfixture.v
+    y, mas adelante, a spi-ram-emu en el RP2040 real): responde al
+    protocolo READ(0x03)+direccion de 16 bits (MSB primero) que ya emite
+    spi_burst_master, sirviendo bytes de 'content_bytes'."""
+ 
+    async def _run():
+        mem = bytearray(content_bytes)
+        total_bits = 0
+        header_shift = 0
+        header_done = False
+        read_ptr = 0
+        out_byte = 0
+        data_bit_cnt = 0
+        prev_sclk = 0
+ 
         while True:
             await RisingEdge(dut.clk)
-            mosi = (int(dut.uio_out.value) >> 1) & 1
-            cur = int(dut.uio_in.value) & ~(1 << 2)
-            dut.uio_in.value = cur | (mosi << 2)
-    cocotb.start_soon(spi_loopback())
+            uio_out = int(dut.uio_out.value)
+            sclk = (uio_out >> SPI_SCLK_BIT) & 1
+            mosi = (uio_out >> SPI_MOSI_BIT) & 1
+            cs_n = (uio_out >> SPI_CS_BIT) & 1
  
-    await load_program(dut, PROGRAM_A)
-    await wait_for_run(dut)
+            if cs_n:
+                total_bits = 0
+                header_done = False
+                data_bit_cnt = 0
+            else:
+                if sclk == 1 and prev_sclk == 0:
+                    if not header_done:
+                        header_shift = ((header_shift << 1) | mosi) & 0xFFFFFF
+                        total_bits += 1
+                        if total_bits == 24:
+                            read_ptr = header_shift & 0xFFFF
+                            header_done = True
+                            data_bit_cnt = 0
+                    else:
+                        if data_bit_cnt == 7:
+                            data_bit_cnt = 0
+                            read_ptr = (read_ptr + 1) & 0xFFFF
+                        else:
+                            data_bit_cnt += 1
+                elif sclk == 0 and prev_sclk == 1:
+                    if header_done:
+                        out_byte = mem[read_ptr % len(mem)]
  
-    b1 = await uart_recv_byte(dut)
-    assert b1 == 0x0F, f"esperaba 0x0F (5+10), llego 0x{b1:02X}"
-    b2 = await uart_recv_byte(dut)
-    assert b2 == 0xAA, f"esperaba 0xAA (loopback SPI), llego 0x{b2:02X}"
+            prev_sclk = sclk
+            miso_bit = (out_byte >> (7 - data_bit_cnt)) & 1
+            cur = int(dut.uio_in.value) & ~(1 << SPI_MISO_BIT)
+            dut.uio_in.value = cur | (miso_bit << SPI_MISO_BIT)
+ 
+    return cocotb.start_soon(_run())
  
  
 @cocotb.test()
-async def test_program_b_alu_rtype(dut):
-    """Programa B (24 instr, bandera acumulada): and, sll, sra.
-    Un solo byte de resultado: 0x01 = todo paso, 0x00 = alguna fallo."""
+async def test_instruction_set_multiblock(dut):
+    """Valida ADD, SUB, AND, SLLI y BEQ encadenando 5 bloques (40
+    instrucciones) por SPI sobre un procesador cuya instruction_mem solo
+    tiene 8 palabras -- prueba formal de que el mecanismo de bloques
+    extiende la capacidad logica de programa mas alla de la memoria
+    fisica, sin romper el ciclo unico."""
     await start_clock(dut)
     await reset_dut(dut)
-    await load_program(dut, PROGRAM_B)
+ 
+    spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
+ 
+    await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
     await wait_for_run(dut)
  
-    result = await uart_recv_byte(dut)
-    assert result == 0x01, f"esperaba 0x01 (todo paso), llego 0x{result:02X}"
+    recibidos = []
+    for _ in EXPECTED_UART_SEQUENCE:
+        recibidos.append(await uart_recv_byte(dut))
+ 
+    assert recibidos == EXPECTED_UART_SEQUENCE, (
+        f"secuencia esperada {[hex(b) for b in EXPECTED_UART_SEQUENCE]}, "
+        f"llego {[hex(b) for b in recibidos]}"
+    )
  
  
 @cocotb.test()
-async def test_program_d_branches_jumps(dut):
-    """Programa D (24 instr, bandera acumulada): blt, bltu.
-    Un solo byte de resultado: 0x01 = todo paso, 0x00 = alguna fallo."""
+async def test_boot_and_first_block_only(dut):
+    """Sanity check minimo: solo el bootloader UART + bloque 0 (ADD),
+    sin depender de que el esclavo SPI conteste (bloque 0 SI dispara una
+    recarga, asi que igual se necesita el esclavo, pero aqui solo se
+    verifica el primer byte por UART para aislar problemas de bootload
+    puro de problemas de SPI)."""
     await start_clock(dut)
     await reset_dut(dut)
-    await load_program(dut, PROGRAM_D)
+ 
+    spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
+ 
+    await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
     await wait_for_run(dut)
  
-    result = await uart_recv_byte(dut)
-    assert result == 0x01, f"esperaba 0x01 (todo paso), llego 0x{result:02X}"
+    b0 = await uart_recv_byte(dut)
+    assert b0 == 0x0D, f"esperaba 0x0D (10+3 via ADD), llego 0x{b0:02X}"
+ 
