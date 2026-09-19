@@ -32,7 +32,7 @@ module tb ();
   wire VGND = 1'b0;
 `endif
  
-  tt_um_vanessa_riscv_4x2 user_project (
+  tt_um_vanessa_riscv user_project (
  
 `ifdef GL_TEST
       .VPWR(VPWR),
