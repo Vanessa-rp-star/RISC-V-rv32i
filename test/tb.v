@@ -3,7 +3,10 @@
  
 /* Este testbench solo instancia el modulo y expone señales de nivel
    superior convenientes para que cocotb (test.py) las maneje directamente.
-*/
+ 
+   ACTUALIZADO: instancia tt_um_vanessa_riscv_4x2 (rediseño 4x2, 8 palabras
+   de instruccion + carga de bloques por SPI) en vez de tt_um_vanessa_riscv
+   (version original de 24 palabras / 6x2). */
 module tb ();
  
   // Vuelca las señales a un VCD para poder verlas con gtkwave/surfer.
@@ -29,7 +32,7 @@ module tb ();
   wire VGND = 1'b0;
 `endif
  
-  tt_um_vanessa_riscv user_project (
+  tt_um_vanessa_riscv_4x2 user_project (
  
 `ifdef GL_TEST
       .VPWR(VPWR),
