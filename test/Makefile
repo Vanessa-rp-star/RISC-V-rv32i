@@ -1,22 +1,15 @@
-# Makefile
-# See https://docs.cocotb.org/en/stable/quickstart.html for more info
- 
 # defaults
 SIM ?= icarus
 FST ?= -fst # Use more efficient FST format
 TOPLEVEL_LANG ?= verilog
 SRC_DIR = $(PWD)/../src
-PROJECT_SOURCES = tt_um_vanessa_riscv.v
+PROJECT_SOURCES = tt_um_vanessa_riscv_4x2.v
  
 ifneq ($(GATES),yes)
  
 # RTL simulation:
 SIM_BUILD				= sim_build/rtl
 VERILOG_SOURCES += $(addprefix $(SRC_DIR)/,$(PROJECT_SOURCES))
-# Reloj mas rapido SOLO para acelerar la simulacion (no cambia el
-# comportamiento funcional: CLKS_PER_BIT se recalcula solo a partir de este
-# parametro). El chip real usa 20MHz (ver info.yaml / config.json).
-COMPILE_ARGS += -Ptb.user_project.CLK_FREQ_HZ=2000000
  
 else
  
@@ -47,3 +40,4 @@ COCOTB_TEST_MODULES = test
  
 # include cocotb's make rules to take care of the simulator setup
 include $(shell cocotb-config --makefiles)/Makefile.sim
+ 
