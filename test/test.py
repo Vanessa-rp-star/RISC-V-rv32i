@@ -24,17 +24,14 @@ SPI_MOSI_BIT = 1
 SPI_SCLK_BIT = 3
 SPI_MISO_BIT = 2
  
-# CLK_DIV del spi_burst_master instanciado en tt_um_vanessa_riscv.v
-# (mi_spi_burst #(.CLK_DIV(4))). Cada bit de SPI tarda 2*CLK_DIV ciclos de
-# clk (medio periodo de sclk = CLK_DIV ciclos, sclk tiene 2 flancos por
-# bit). Una recarga de bloque completa transmite 24 bits de encabezado
-# (comando + direccion) + BLOCK_BYTES*8 bits de datos.
+
 SPI_CLK_DIV = 4
 SPI_BITS_PER_BLOCK = 24 + BLOCK_BYTES * 8
 SPI_RELOAD_CYCLES = SPI_BITS_PER_BLOCK * 2 * SPI_CLK_DIV   # 2240 ciclos = 224us a 10MHz
  
 
 UART_BYTE_TIMEOUT_CYCLES = SPI_RELOAD_CYCLES * 2 + 2000  # margen amplio
+ 
  
 
 BLOQUES_TEST = [
@@ -72,7 +69,7 @@ def words_to_bytes(words):
  
  
 async def start_clock(dut):
-    clock = Clock(dut.clk, CLK_PERIOD_NS, units="ns")
+    clock = Clock(dut.clk, CLK_PERIOD_NS, unit="ns")
     cocotb.start_soon(clock.start())
  
  
@@ -116,36 +113,63 @@ async def load_block0(dut, words):
             await uart_send_byte(dut, (w >> shift) & 0xFF)
  
  
-async def uart_recv_byte(dut, max_cycles=UART_BYTE_TIMEOUT_CYCLES):
-    """CORREGIDO: el timeout ahora se expresa en ciclos de clk directamente
-    (no en 'bits' de UART) y por defecto cubre una recarga de bloque SPI
-    completa (~224us) mas margen, no solo ~120us. Antes de este fix, el
-    timeout expiraba a la mitad de una recarga de bloque real y el test
-    fallaba aunque el chip siguiera funcionando correctamente."""
-    t_wait_start = get_sim_time(units="ns")
+def start_uart_monitor(dut):
+    """CAUSA RAIZ REAL (confirmada con el log de GitHub Actions): bloque0
+    ejecuta sus 8 instrucciones en solo 8 ciclos (800ns, ciclo unico) y
+    dispara la recarga del bloque1 CASI DE INMEDIATO. Mientras tanto,
+    Python sigue ocupado terminando las esperas de margen de
+    uart_send_byte() del propio bootloader (~4000ns mas) y solo DESPUES
+    llama wait_for_run() -- que para cuando empieza a preguntar, el chip
+    YA paso por RUN una vez y esta en BLOCKLOAD cargando el bloque 1.
+    El byte de ADD (0x0D) se transmite y se pierde sin que nadie lo este
+    observando: por eso ambos tests reciben la secuencia CORRIDA UNA
+    POSICION (0x07,0x08,0x10,0xAA en vez de 0x0D,0x07,0x08,0x10,0xAA).
+    Ni el RTL ni el protocolo estan mal (un modelo Python ciclo-exacto del
+    diseño completo confirma la secuencia correcta) -- el bug era que el
+    testbench empezaba a "escuchar" demasiado tarde.
+ 
+    FIX: un monitor de fondo que arranca ANTES de mandar el bootload y
+    detecta cada flanco de bajada real de TX (1->0), sin importar que la
+    corrutina principal siga ocupada haciendo otra cosa. Cada byte
+    decodificado se agrega, en orden, a la lista que esta funcion regresa."""
+    received = []
+ 
+    async def _run():
+        prev_txd = (int(dut.uo_out.value) >> TX_BIT) & 1
+        while True:
+            await ClockCycles(dut.clk, 1)
+            txd = (int(dut.uo_out.value) >> TX_BIT) & 1
+            if txd == 0 and prev_txd == 1:
+                # flanco de bajada real = inicio de una trama UART nueva.
+                await ClockCycles(dut.clk, CLKS_PER_BIT // 2)
+                value = 0
+                for i in range(8):
+                    await ClockCycles(dut.clk, CLKS_PER_BIT)
+                    bit = (int(dut.uo_out.value) >> TX_BIT) & 1
+                    value |= (bit << i)
+                await ClockCycles(dut.clk, CLKS_PER_BIT)
+                received.append(value)
+                dut._log.info(
+                    f"[DEBUG] monitor UART: byte #{len(received)} = 0x{value:02X} "
+                    f"en t={get_sim_time(unit='ns')}ns"
+                )
+                prev_txd = (int(dut.uo_out.value) >> TX_BIT) & 1
+            else:
+                prev_txd = txd
+ 
+    task = cocotb.start_soon(_run())
+    return received, task
+ 
+ 
+async def wait_for_n_bytes(dut, received, n, max_cycles=UART_BYTE_TIMEOUT_CYCLES * 6):
     for _ in range(max_cycles):
-        if int(dut.uo_out.value) & (1 << TX_BIT) == 0:
-            break
+        if len(received) >= n:
+            return
         await ClockCycles(dut.clk, 1)
-    else:
-        raise TimeoutError(
-            f"No llego ningun byte por UART TX en {max_cycles} ciclos "
-            f"({max_cycles*CLK_PERIOD_NS/1000:.1f} us), esperando desde "
-            f"t={t_wait_start}ns hasta t={get_sim_time(units='ns')}ns"
-        )
-    t_start_bit = get_sim_time(units="ns")
-    await ClockCycles(dut.clk, CLKS_PER_BIT // 2)
-    value = 0
-    for i in range(8):
-        await ClockCycles(dut.clk, CLKS_PER_BIT)
-        bit = (int(dut.uo_out.value) >> TX_BIT) & 1
-        value |= (bit << i)
-    await ClockCycles(dut.clk, CLKS_PER_BIT)
-    dut._log.info(
-        f"[DEBUG] byte recibido 0x{value:02X} -- espera desde t={t_wait_start}ns, "
-        f"bit de inicio en t={t_start_bit}ns, fin en t={get_sim_time(units='ns')}ns"
+    raise TimeoutError(
+        f"Solo llegaron {len(received)} de {n} bytes esperados: "
+        f"{[hex(b) for b in received]}"
     )
-    return value
  
  
 async def monitor_mode(dut):
@@ -158,7 +182,7 @@ async def monitor_mode(dut):
         await ClockCycles(dut.clk, 1)
         mode = (int(dut.uo_out.value) >> 6) & 0b11
         if mode != prev:
-            dut._log.info(f"[DEBUG] t={get_sim_time(units='ns')}ns mode {prev} -> {mode} (PC~uo_out[2:0]={int(dut.uo_out.value)&7})")
+            dut._log.info(f"[DEBUG] t={get_sim_time(unit='ns')}ns mode {prev} -> {mode} (PC~uo_out[2:0]={int(dut.uo_out.value)&7})")
             prev = mode
  
  
@@ -238,27 +262,36 @@ async def test_instruction_set_multiblock(dut):
     await start_clock(dut)
     await reset_dut(dut)
  
- 
+    # CORREGIDO: cocotb corre TODAS las funciones @cocotb.test() de este
+    # archivo dentro de la MISMA simulacion continua (no reinicia el
+    # simulador entre pruebas). Una tarea de fondo lanzada con
+    # cocotb.start_soon() sigue viva despues de que su test termina, y
+    # seguia compitiendo por uio_in con la tarea del siguiente test --
+    # por eso test_boot_and_first_block_only recibia el resultado de
+    # SUB (bloque 1) en vez de ADD (bloque 0). Ahora se mata la tarea al
+    # salir de este test, pase lo que pase (try/finally).
     spi_task = spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
-    mon_task = cocotb.start_soon(monitor_mode(dut))
-    dut._log.info(f"[DEBUG] === INICIO test_instruction_set_multiblock, t={get_sim_time(units='ns')}ns ===")
+    mode_task = cocotb.start_soon(monitor_mode(dut))
+    # El monitor de UART arranca ANTES de mandar el bootload -- asi no
+    # importa que bloque0 termine de ejecutarse mientras Python sigue
+    # ocupado en el bit-banging del propio envio.
+    received, uart_task = start_uart_monitor(dut)
+    dut._log.info(f"[DEBUG] === INICIO test_instruction_set_multiblock, t={get_sim_time(unit='ns')}ns ===")
     try:
         await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
-        dut._log.info(f"[DEBUG] bloque0 enviado por UART, t={get_sim_time(units='ns')}ns")
-        await wait_for_run(dut)
-        dut._log.info(f"[DEBUG] mode==RUN detectado, t={get_sim_time(units='ns')}ns")
+        dut._log.info(f"[DEBUG] bloque0 enviado por UART, t={get_sim_time(unit='ns')}ns")
  
-        recibidos = []
-        for _ in EXPECTED_UART_SEQUENCE:
-            recibidos.append(await uart_recv_byte(dut))
+        await wait_for_n_bytes(dut, received, len(EXPECTED_UART_SEQUENCE))
+        recibidos = received[:len(EXPECTED_UART_SEQUENCE)]
  
         assert recibidos == EXPECTED_UART_SEQUENCE, (
             f"secuencia esperada {[hex(b) for b in EXPECTED_UART_SEQUENCE]}, "
             f"llego {[hex(b) for b in recibidos]}"
         )
     finally:
-        spi_task.kill()
-        mon_task.kill()
+        spi_task.cancel()
+        mode_task.cancel()
+        uart_task.cancel()
  
  
 @cocotb.test()
@@ -272,17 +305,18 @@ async def test_boot_and_first_block_only(dut):
     await reset_dut(dut)
  
     spi_task = spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
-    mon_task = cocotb.start_soon(monitor_mode(dut))
-    dut._log.info(f"[DEBUG] === INICIO test_boot_and_first_block_only, t={get_sim_time(units='ns')}ns ===")
+    mode_task = cocotb.start_soon(monitor_mode(dut))
+    received, uart_task = start_uart_monitor(dut)
+    dut._log.info(f"[DEBUG] === INICIO test_boot_and_first_block_only, t={get_sim_time(unit='ns')}ns ===")
     try:
         await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
-        dut._log.info(f"[DEBUG] bloque0 enviado por UART, t={get_sim_time(units='ns')}ns")
-        await wait_for_run(dut)
-        dut._log.info(f"[DEBUG] mode==RUN detectado, t={get_sim_time(units='ns')}ns")
+        dut._log.info(f"[DEBUG] bloque0 enviado por UART, t={get_sim_time(unit='ns')}ns")
  
-        b0 = await uart_recv_byte(dut)
+        await wait_for_n_bytes(dut, received, 1)
+        b0 = received[0]
         assert b0 == 0x0D, f"esperaba 0x0D (10+3 via ADD), llego 0x{b0:02X}"
     finally:
-        spi_task.kill()
-        mon_task.kill()
+        spi_task.cancel()
+        mode_task.cancel()
+        uart_task.cancel()
  
