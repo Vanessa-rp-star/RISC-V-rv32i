@@ -1,6 +1,7 @@
 import cocotb
 from cocotb.clock import Clock
 from cocotb.triggers import ClockCycles, Timer, RisingEdge
+from cocotb.utils import get_sim_time
  
 CLK_FREQ_HZ = 10_000_000     # frecuencia real del chip (ver info.yaml/config.json)
 BAUD_RATE   = 115200
@@ -23,13 +24,18 @@ SPI_MOSI_BIT = 1
 SPI_SCLK_BIT = 3
 SPI_MISO_BIT = 2
  
-
+# CLK_DIV del spi_burst_master instanciado en tt_um_vanessa_riscv.v
+# (mi_spi_burst #(.CLK_DIV(4))). Cada bit de SPI tarda 2*CLK_DIV ciclos de
+# clk (medio periodo de sclk = CLK_DIV ciclos, sclk tiene 2 flancos por
+# bit). Una recarga de bloque completa transmite 24 bits de encabezado
+# (comando + direccion) + BLOCK_BYTES*8 bits de datos.
 SPI_CLK_DIV = 4
 SPI_BITS_PER_BLOCK = 24 + BLOCK_BYTES * 8
 SPI_RELOAD_CYCLES = SPI_BITS_PER_BLOCK * 2 * SPI_CLK_DIV   # 2240 ciclos = 224us a 10MHz
  
 
 UART_BYTE_TIMEOUT_CYCLES = SPI_RELOAD_CYCLES * 2 + 2000  # margen amplio
+ 
 
 BLOQUES_TEST = [
     # bloque 0
@@ -116,6 +122,7 @@ async def uart_recv_byte(dut, max_cycles=UART_BYTE_TIMEOUT_CYCLES):
     completa (~224us) mas margen, no solo ~120us. Antes de este fix, el
     timeout expiraba a la mitad de una recarga de bloque real y el test
     fallaba aunque el chip siguiera funcionando correctamente."""
+    t_wait_start = get_sim_time(units="ns")
     for _ in range(max_cycles):
         if int(dut.uo_out.value) & (1 << TX_BIT) == 0:
             break
@@ -123,8 +130,10 @@ async def uart_recv_byte(dut, max_cycles=UART_BYTE_TIMEOUT_CYCLES):
     else:
         raise TimeoutError(
             f"No llego ningun byte por UART TX en {max_cycles} ciclos "
-            f"({max_cycles*CLK_PERIOD_NS/1000:.1f} us)"
+            f"({max_cycles*CLK_PERIOD_NS/1000:.1f} us), esperando desde "
+            f"t={t_wait_start}ns hasta t={get_sim_time(units='ns')}ns"
         )
+    t_start_bit = get_sim_time(units="ns")
     await ClockCycles(dut.clk, CLKS_PER_BIT // 2)
     value = 0
     for i in range(8):
@@ -132,7 +141,25 @@ async def uart_recv_byte(dut, max_cycles=UART_BYTE_TIMEOUT_CYCLES):
         bit = (int(dut.uo_out.value) >> TX_BIT) & 1
         value |= (bit << i)
     await ClockCycles(dut.clk, CLKS_PER_BIT)
+    dut._log.info(
+        f"[DEBUG] byte recibido 0x{value:02X} -- espera desde t={t_wait_start}ns, "
+        f"bit de inicio en t={t_start_bit}ns, fin en t={get_sim_time(units='ns')}ns"
+    )
     return value
+ 
+ 
+async def monitor_mode(dut):
+    """Tarea de diagnostico: imprime cada cambio de 'mode' (uo_out[7:6]) con
+    marca de tiempo de simulacion, para poder comparar linea por linea
+    contra el modelo Python ciclo-exacto y encontrar exactamente donde
+    diverge el comportamiento real de icarus."""
+    prev = None
+    while True:
+        await ClockCycles(dut.clk, 1)
+        mode = (int(dut.uo_out.value) >> 6) & 0b11
+        if mode != prev:
+            dut._log.info(f"[DEBUG] t={get_sim_time(units='ns')}ns mode {prev} -> {mode} (PC~uo_out[2:0]={int(dut.uo_out.value)&7})")
+            prev = mode
  
  
 async def wait_for_mode(dut, mode, max_cycles=200000):
@@ -211,18 +238,15 @@ async def test_instruction_set_multiblock(dut):
     await start_clock(dut)
     await reset_dut(dut)
  
-    # CORREGIDO: cocotb corre TODAS las funciones @cocotb.test() de este
-    # archivo dentro de la MISMA simulacion continua (no reinicia el
-    # simulador entre pruebas). Una tarea de fondo lanzada con
-    # cocotb.start_soon() sigue viva despues de que su test termina, y
-    # seguia compitiendo por uio_in con la tarea del siguiente test --
-    # por eso test_boot_and_first_block_only recibia el resultado de
-    # SUB (bloque 1) en vez de ADD (bloque 0). Ahora se mata la tarea al
-    # salir de este test, pase lo que pase (try/finally).
+ 
     spi_task = spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
+    mon_task = cocotb.start_soon(monitor_mode(dut))
+    dut._log.info(f"[DEBUG] === INICIO test_instruction_set_multiblock, t={get_sim_time(units='ns')}ns ===")
     try:
         await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
+        dut._log.info(f"[DEBUG] bloque0 enviado por UART, t={get_sim_time(units='ns')}ns")
         await wait_for_run(dut)
+        dut._log.info(f"[DEBUG] mode==RUN detectado, t={get_sim_time(units='ns')}ns")
  
         recibidos = []
         for _ in EXPECTED_UART_SEQUENCE:
@@ -234,6 +258,7 @@ async def test_instruction_set_multiblock(dut):
         )
     finally:
         spi_task.kill()
+        mon_task.kill()
  
  
 @cocotb.test()
@@ -247,12 +272,17 @@ async def test_boot_and_first_block_only(dut):
     await reset_dut(dut)
  
     spi_task = spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
+    mon_task = cocotb.start_soon(monitor_mode(dut))
+    dut._log.info(f"[DEBUG] === INICIO test_boot_and_first_block_only, t={get_sim_time(units='ns')}ns ===")
     try:
         await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
+        dut._log.info(f"[DEBUG] bloque0 enviado por UART, t={get_sim_time(units='ns')}ns")
         await wait_for_run(dut)
+        dut._log.info(f"[DEBUG] mode==RUN detectado, t={get_sim_time(units='ns')}ns")
  
         b0 = await uart_recv_byte(dut)
         assert b0 == 0x0D, f"esperaba 0x0D (10+3 via ADD), llego 0x{b0:02X}"
     finally:
         spi_task.kill()
+        mon_task.kill()
  
