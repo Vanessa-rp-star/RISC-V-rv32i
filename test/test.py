@@ -23,18 +23,13 @@ SPI_MOSI_BIT = 1
 SPI_SCLK_BIT = 3
 SPI_MISO_BIT = 2
  
-# CLK_DIV del spi_burst_master instanciado en tt_um_vanessa_riscv.v
-# (mi_spi_burst #(.CLK_DIV(4))). Cada bit de SPI tarda 2*CLK_DIV ciclos de
-# clk (medio periodo de sclk = CLK_DIV ciclos, sclk tiene 2 flancos por
-# bit). Una recarga de bloque completa transmite 24 bits de encabezado
-# (comando + direccion) + BLOCK_BYTES*8 bits de datos.
+
 SPI_CLK_DIV = 4
 SPI_BITS_PER_BLOCK = 24 + BLOCK_BYTES * 8
 SPI_RELOAD_CYCLES = SPI_BITS_PER_BLOCK * 2 * SPI_CLK_DIV   # 2240 ciclos = 224us a 10MHz
  
 
 UART_BYTE_TIMEOUT_CYCLES = SPI_RELOAD_CYCLES * 2 + 2000  # margen amplio
- 
 
 BLOQUES_TEST = [
     # bloque 0
@@ -86,14 +81,23 @@ async def reset_dut(dut):
  
  
 async def uart_send_byte(dut, byte):
+    """CORREGIDO: usa ClockCycles(CLKS_PER_BIT) en vez de Timer(BIT_NS).
+    Numericamente son la misma duracion (CLKS_PER_BIT*CLK_PERIOD_NS==BIT_NS
+    de forma exacta), pero Timer() espera un tiempo ABSOLUTO de simulacion
+    mientras que la logica RTL del receptor cuenta CICLOS DE RELOJ
+    (baud_cnt). Un modelo Python ciclo-exacto del diseño completo (CPU +
+    FSM + spi_burst_master + bootloader) confirmo que el protocolo es
+    correcto y que la secuencia esperada SI se recibe cuando todo se
+    sincroniza estrictamente por ciclos -- por eso se elimina cualquier
+    espera basada en Timer() en las rutinas de UART."""
     dut.ui_in.value = 0
-    await Timer(BIT_NS, units="ns")
+    await ClockCycles(dut.clk, CLKS_PER_BIT)
     for i in range(8):
         bit = (byte >> i) & 1
         dut.ui_in.value = (bit << RX_BIT)
-        await Timer(BIT_NS, units="ns")
+        await ClockCycles(dut.clk, CLKS_PER_BIT)
     dut.ui_in.value = (1 << RX_BIT)
-    await Timer(BIT_NS, units="ns")
+    await ClockCycles(dut.clk, CLKS_PER_BIT)
  
  
 async def load_block0(dut, words):
@@ -121,13 +125,13 @@ async def uart_recv_byte(dut, max_cycles=UART_BYTE_TIMEOUT_CYCLES):
             f"No llego ningun byte por UART TX en {max_cycles} ciclos "
             f"({max_cycles*CLK_PERIOD_NS/1000:.1f} us)"
         )
-    await Timer(BIT_NS // 2, units="ns")
+    await ClockCycles(dut.clk, CLKS_PER_BIT // 2)
     value = 0
     for i in range(8):
-        await Timer(BIT_NS, units="ns")
+        await ClockCycles(dut.clk, CLKS_PER_BIT)
         bit = (int(dut.uo_out.value) >> TX_BIT) & 1
         value |= (bit << i)
-    await Timer(BIT_NS, units="ns")
+    await ClockCycles(dut.clk, CLKS_PER_BIT)
     return value
  
  
