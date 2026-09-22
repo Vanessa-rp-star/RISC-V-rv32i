@@ -10,7 +10,7 @@
   "//": "4x2 configuration optimized for area and routability",
 
   "//": "80% is approximately the minimum feasible density reported by GPL for this design",
-  "PL_TARGET_DENSITY_PCT": 75,
+  "PL_TARGET_DENSITY_PCT": 76,
 
   "//": "50 ns = 20 MHz. Timing already has ample setup margin.",
   "CLOCK_PERIOD": 100,
@@ -48,12 +48,12 @@
   "RUN_HEURISTIC_DIODE_INSERTION": 0,
 
   "//": "Prefer metal jumpers instead of adding diode standard cells",
-  "GRT_ANTENNA_REPAIR_JUMPER_ONLY": true,
+  "GRT_ANTENNA_REPAIR_JUMPER_ONLY": false,
   "GRT_ANTENNA_REPAIR_MARGIN": 0,
   "GRT_ANTENNA_REPAIR_ITERS": 5,
 
   "//": "Use the same strategy during detailed-routing antenna repair",
-  "DRT_ANTENNA_REPAIR_JUMPER_ONLY": true,
+  "DRT_ANTENNA_REPAIR_JUMPER_ONLY": false,
   "DRT_ANTENNA_REPAIR_MARGIN": 0,
   "DRT_ANTENNA_REPAIR_ITERS": 5,
 
