@@ -14,8 +14,10 @@ BLOCK_WORDS  = INSTR_DEPTH
 BLOCK_BYTES  = INSTR_DEPTH * 4      # 32
  
 RX_BIT   = 3   # ui_in[3]           -- sin cambios respecto al diseño de 24
-TX_BIT   = 3   # uo_out[3]          -- CAMBIO: antes uo_out[4]
-TXBUSY_BIT = 4 # uo_out[4]          -- CAMBIO: antes no se usaba en el test
+TX_BIT   = 4   # uo_out[4]          -- ACTUALIZADO: alineado a la Opcion 1 de
+                                     # TT para UART-to-USB (ui_in[3]=RX,
+                                     # uo_out[4]=TX). Antes estaba en uo_out[3].
+TXBUSY_BIT = 3 # uo_out[3]          -- tx_busy (status), antes en uo_out[4]
  
 # uio_out: bit0=cs_n, bit1=mosi, bit3=sclk (salidas del maestro SPI)
 # uio_in:  bit2=miso (entrada al chip, la maneja el esclavo emulado)
