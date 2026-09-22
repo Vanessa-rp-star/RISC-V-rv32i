@@ -22,22 +22,19 @@ module tt_um_vanessa_riscv #(
  
     localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
  
-    localparam INSTR_DEPTH = 8;   // <-- reduccion mas alla del 4x2 (era 16)
-                                    // combinado con DATA_DEPTH=4, alcanza
-                                    // ~34% de reduccion de FFs vs 6x2/24-palabras
-    localparam DATA_DEPTH  = 4;   // <-- reducido de 16 a 4
+    localparam INSTR_DEPTH = 8;   
+    localparam DATA_DEPTH  = 4;   
     localparam IAWIDTH = $clog2(INSTR_DEPTH);
     localparam DAWIDTH = $clog2(DATA_DEPTH);
     localparam RAM_BYTES = DATA_DEPTH * 4;
-    localparam BLOCK_BYTES = INSTR_DEPTH * 4;  // 32 bytes por bloque (antes 64)
+    localparam BLOCK_BYTES = INSTR_DEPTH * 4;  // 32 bytes por bloque 
  
     wire sys_rst = ~rst_n;
  
-    // =====================================================================
     // FSM de 3 modos: LOAD (arranque) -> RUN (ciclo unico) <-> BLOCKLOAD
     // (recargando el siguiente bloque de instrucciones via SPI, sin perder
     // el contenido del banco de registros)
-    // =====================================================================
+
     localparam M_LOAD      = 2'd0;
     localparam M_RUN       = 2'd1;
     localparam M_BLOCKLOAD = 2'd2;
@@ -59,14 +56,11 @@ module tt_um_vanessa_riscv #(
     end
  
     // El CPU se congela (no avanza PC, no escribe regfile) durante LOAD y
-    // BLOCKLOAD -- solo avanza en RUN. El reset COMPLETO (regfile+CSR) solo
-    // ocurre en LOAD; al volver de BLOCKLOAD, el regfile NO se toca.
+    // BLOCKLOAD solo avanza en RUN. 
     wire cpu_full_reset = sys_rst | (mode == M_LOAD);
     wire cpu_en         = ena & (mode == M_RUN) & !pc_reset_pulse;
  
-    // Pulso de 1 ciclo: fuerza PC=0 al terminar de cargar un bloque, SIN
-    // resetear el banco de registros (por eso es una señal separada del
-    // reset completo).
+ 
     reg pc_reset_pulse;
     always @(posedge clk) begin
         pc_reset_pulse <= (mode == M_BLOCKLOAD) && block_load_done;
@@ -102,7 +96,7 @@ module tt_um_vanessa_riscv #(
     );
  
     // =====================================================================
-    // Bootloader UART inicial (igual que el diseño de 24 palabras)
+    // Bootloader UART inicial 
     // =====================================================================
     wire               imem_we_boot;
     wire [IAWIDTH-1:0] imem_waddr_boot;
@@ -116,7 +110,7 @@ module tt_um_vanessa_riscv #(
     );
  
     // =====================================================================
-    // NUEVO: SPI maestro de rafaga + cargador de bloques
+    //  SPI maestro de rafaga + cargador de bloques
     // =====================================================================
     wire spi_sclk, spi_mosi, spi_cs_n;
     wire spi_busy, spi_byte_valid;
@@ -216,8 +210,7 @@ module tt_um_vanessa_riscv #(
                       data_read_from_ram;
  
     // =====================================================================
-    // Procesador RISC-V -- MISMO datapath de ciclo unico, sin cambios,
-    // salvo el nuevo puerto pc_reset_pulse (reset PARCIAL solo del PC)
+    // Procesador RISC-V 
     // =====================================================================
     single_cycle_rv32i_vr mi_procesador (
         .clk(clk), .reset(cpu_full_reset), .pc_reset_pulse(pc_reset_pulse),
@@ -235,7 +228,10 @@ module tt_um_vanessa_riscv #(
     // 00=LOAD  01=RUN(ciclo unico)  10=BLOCKLOAD(cargando por SPI)
     // =====================================================================
     wire loading_any = loading_boot | (mode == M_BLOCKLOAD);
-    assign uo_out = {mode, loading_any, tx_busy, tx_pin, pc_out[2:0]};
+    // uo_out[4]=tx_pin (Opcion 1 de TT para UART-to-USB:
+    // ui_in[3]=RX, uo_out[4]=TX), uo_out[3]=tx_busy
+    assign uo_out = {mode, loading_any, tx_pin, tx_busy, pc_out[2:0]};
+ 
  
     assign uio_out = {4'b0000, spi_sclk, 1'b0, spi_mosi, spi_cs_n};
     assign uio_oe  = 8'b0000_1011;
@@ -287,8 +283,7 @@ endmodule
  
  
 // =============================================================================
-// (sin cambios respecto al diseño de 24 palabras) uart_bootloader,
-// instruction_mem, data_mem, Receiver_RxD, Transmitter_TxD
+// uart_bootloader, instruction_mem, data_mem, Receiver_RxD, Transmitter_TxD
 // =============================================================================
 module uart_bootloader #(
     parameter DEPTH  = 16,
@@ -414,7 +409,7 @@ endmodule
  
  
 // =============================================================================
-// (NUEVO) SPI maestro en modo rafaga -- ver spi_burst_master.v ya verificado
+//  SPI maestro en modo rafaga 
 // =============================================================================
 module spi_burst_master #(parameter CLK_DIV = 4)(
     input wire clk, rst_n,
@@ -438,13 +433,9 @@ module spi_burst_master #(parameter CLK_DIV = 4)(
                 if (start) begin
                     busy<=1; cs_n<=0; shift_out<=cmd; bit_cnt<=0; data_cnt<=0;
                     div_cnt<=0; sclk_phase<=0; sclk<=0; state<=S_CMD;
-                    mosi<=cmd[7];  // CORREGIDO: precargar el primer bit real
-                                   // ANTES del primer flanco de subida --
-                                   // sin esto, mosi seguia en su valor de
-                                   // reset (0) durante todo el primer bit,
-                                   // corriendo TODA la transmision una
-                                   // posicion (bit fantasma al inicio).
+                    mosi<=cmd[7];  
                 end
+                
             end else begin
                 if (div_cnt==CLK_DIV-1) begin
                     div_cnt<=0; sclk_phase<=~sclk_phase;
@@ -453,12 +444,7 @@ module spi_burst_master #(parameter CLK_DIV = 4)(
                     end else begin
                         sclk<=0;
                         if (bit_cnt==7) begin
-                            // Transicion de byte: el byte NUEVO se carga en
-                            // shift_out, y mosi debe reflejar el PRIMER bit
-                            // de ESE byte nuevo directamente -- nunca
-                            // shift_out[7] generico, porque en este mismo
-                            // ciclo shift_out todavia tiene (via NBA) el
-                            // valor VIEJO, no el nuevo recien cargado.
+                           
                             bit_cnt<=0;
                             case (state)
                                 S_CMD:     begin shift_out<=addr[15:8]; mosi<=addr[15]; state<=S_ADDR_HI; end
@@ -468,13 +454,12 @@ module spi_burst_master #(parameter CLK_DIV = 4)(
                                     else begin shift_out<=8'h00; mosi<=1'b0; state<=S_DATA; end
                                 end
                                 S_DATA: begin
-                                    // CORREGIDO: shift_in ya tiene los 8 bits
+                                    //shift_in ya tiene los 8 bits
                                     // completos para cuando se evalua esto (el
                                     // flanco de subida que lo completo ya paso).
                                     // Usar {shift_in[6:0],miso} de nuevo aqui
                                     // desplazaba el byte completo un bit --
-                                    // mismo tipo de bug que ya corregimos en
-                                    // la generacion de mosi, ahora en rx_byte.
+                                 
                                     rx_byte<=shift_in; byte_valid<=1; byte_index<=data_cnt;
                                     if (data_cnt==nbytes-1) state<=S_DONE;
                                     else begin data_cnt<=data_cnt+1; mosi<=1'b0; end
@@ -482,12 +467,7 @@ module spi_burst_master #(parameter CLK_DIV = 4)(
                                 default: ;
                             endcase
                         end else begin
-                            // Dentro del mismo byte: shift_out[6] (NO [7])
-                            // es el bit que esta a punto de convertirse en
-                            // el nuevo bit7 tras el corrimiento -- usar
-                            // shift_out[7] (el valor VIEJO, ya enviado hace
-                            // un periodo) deja el ultimo bit de cada byte
-                            // mal, corriendo toda la transmision.
+                           
                             bit_cnt<=bit_cnt+1;
                             shift_out<={shift_out[6:0],1'b0};
                             mosi<=shift_out[6];
@@ -502,7 +482,7 @@ endmodule
  
  
 // =============================================================================
-// CORE RISC-V -- IDENTICO al datapath ya validado, salvo el nuevo puerto
+// CORE RISC-V  nuevo puerto
 // pc_reset_pulse (reset PARCIAL: solo el PC, no el regfile ni el CSR)
 // =============================================================================
 module single_cycle_rv32i_vr (
