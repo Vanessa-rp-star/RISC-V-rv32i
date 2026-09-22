@@ -1,7 +1,8 @@
 yaml_version: 6
 project:
   title: "RISC-V 32-bit Single-Cycle"
-  author: "Vanessa Rocha Perez"
+  author: "Vanessa Rocha Perez"  
+  discord: ""
   description: "Procesador RV32I de ciclo unico"
   language: "Verilog"
   clock_hz: 10000000
