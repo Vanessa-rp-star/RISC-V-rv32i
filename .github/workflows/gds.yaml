@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'src/**'
+      - 'test/**'
       - 'config.json'
       - 'info.yaml'
       - '.github/workflows/gds.yaml'
