@@ -35,9 +35,14 @@ jobs:
     needs: gds
     runs-on: ubuntu-24.04
     steps:
-     - name: Run Gate Level Test
-       uses: TinyTapeout/tt-gds-action/gl_test@ttsky26a
-      
+      - name: checkout repo
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Run Gate Level Test
+        uses: TinyTapeout/tt-gds-action/gl_test@ttsky26a
+
   viewer:
     needs: gds
     runs-on: ubuntu-24.04
