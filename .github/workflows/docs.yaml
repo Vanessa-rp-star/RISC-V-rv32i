@@ -2,12 +2,7 @@ name: docs
 
 on:
   push:
-    paths:
-      - 'src/**'
-      - 'config.json'
-      - 'info.yaml'
-      - '.github/workflows/gds.yaml'
-  workflow_dispatch:
+   workflow_dispatch:
 jobs:
   docs:
     runs-on: ubuntu-24.04
