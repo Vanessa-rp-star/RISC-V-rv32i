@@ -71,9 +71,10 @@ F2	3	96	96	Interactive keyboard	OK
 H_suma	5	160	160	Two-digit sum correct	OK
 H_resta	5	160	160	Two-digit subtraction correct	OK
 
-Mostrar imagen
 
-Real Basys3/RealTerm capture: the CPU receives live keyboard input (interactive-keyboard category) and transmits back the text "RISC-V 32I single cycle BY Vanessa" (docs/UART.png), confirming UART transmit and receive on real hardware with the final pin assignment.
+![Real RealTerm capture showing the interactive keyboard test (RISC-V 32I single cycle BY Vanessa)](docs/UART.png)
+
+Real Basys3/RealTerm capture: the CPU receives live keyboard input (interactive-keyboard category) and transmits back the text "RISC-V 32I single cycle BY Vanessa" , confirming UART transmit and receive on real hardware with the final pin assignment.
 
 Symbolic single-cycle execution diagram
 
