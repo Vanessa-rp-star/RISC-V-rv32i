@@ -48,33 +48,46 @@ ASIC hardening — LibreLane/OpenLane flow (SKY130, sky130_fd_sc_hd) from synthe
 Online Viewers
 <!--  link to the Tiny Tapeout project page / Wokwi viewer once the shuttle listing is public -->
 
-Review and Reproducibility Notes
-RTL: src/tt_um_vanessa_riscv.v — single top module, no external IP.
-Cocotb testbench: test/test.py (TX_BIT/TXBUSY_BIT aligned to the UART pinout below).
-Category programs: .bin/.mem pairs under categorias/, one pair per category (A, B, C, D, D2, E, F2, G, H_suma, H_resta).
-FPGA package: vivado_actualizado/ — DUT, top wrapper, SPI RAM test fixture and .xdc constraints, consistent with the RTL pinout.
-To reproduce the FPGA results: program the Basys3 with the bitstream built from vivado_actualizado/, load a category's .bin over UART, and compare the RealTerm output against the table below.
-Simulation Results
-Cycle-accurate model (Python)
-30/30 RV32I base-ISA instructions verified individually.
-Mutual-exclusion invariant: 0 violations over 136,353 cycles / 33 block reloads.
-FPGA (Basys3 + Vivado + RealTerm), final pinout
-Category	Blocks	Bytes	MEM_BYTES	RealTerm result	Status
-A	4	128	128	0F 05	OK
-B	5	160	160	01	OK
-C	5	160	160	01	OK
-D	4	128	128	01	OK
-D2	5	160	160	99 0C FA	OK
-E	5	160	160	01	OK
-G	3	96	96	59	OK
-F2	3	96	96	Interactive keyboard	OK
-H_suma	5	160	160	Two-digit sum correct	OK
-H_resta	5	160	160	Two-digit subtraction correct	OK
+## Review and Reproducibility Notes
 
+| Item | Path | Notes |
+| --- | --- | --- |
+| RTL | `src/tt_um_vanessa_riscv.v` | Single top module, no external IP |
+| Cocotb testbench | `test/test.py` | `TX_BIT`/`TXBUSY_BIT` aligned to the UART pinout above |
+| Category programs | `categorias/` | `.bin`/`.mem` pairs, one per category (A, B, C, D, D2, E, F2, G, H_suma, H_resta) |
+| FPGA package | `vivado_actualizado/` | DUT, top wrapper, SPI RAM test fixture, `.xdc` constraints — consistent with the RTL pinout |
+
+To reproduce the FPGA results: program the Basys3 with the bitstream built from
+`vivado_actualizado/`, load a category's `.bin` over UART, and compare the RealTerm output
+against the table in [Simulation Results](#simulation-results).
+
+## Simulation Results
+
+### Cycle-accurate model (Python)
+
+- 30/30 RV32I base-ISA instructions verified individually.
+- Mutual-exclusion invariant: 0 violations over 136,353 cycles / 33 block reloads.
+
+### FPGA (Basys3 + Vivado + RealTerm), final pinout
+
+| Category | Blocks | Bytes | `MEM_BYTES` | RealTerm result | Status |
+| -------- | ------ | ----- | ----------- | ---------------- | ------ |
+| A        | 4      | 128   | 128         | `0F 05`           | OK     |
+| B        | 5      | 160   | 160         | `01`              | OK     |
+| C        | 5      | 160   | 160         | `01`              | OK     |
+| D        | 4      | 128   | 128         | `01`              | OK     |
+| D2       | 5      | 160   | 160         | `99 0C FA`        | OK     |
+| E        | 5      | 160   | 160         | `01`              | OK     |
+| G        | 3      | 96    | 96          | `59`              | OK     |
+| F2       | 3      | 96    | 96          | Interactive keyboard | OK |
+| H_suma   | 5      | 160   | 160         | Two-digit sum correct | OK |
+| H_resta  | 5      | 160   | 160         | Two-digit subtraction correct | OK |
 
 ![Real RealTerm capture showing the interactive keyboard test (RISC-V 32I single cycle BY Vanessa)](docs/UART.png)
 
-Real Basys3/RealTerm capture: the CPU receives live keyboard input (interactive-keyboard category) and transmits back the text "RISC-V 32I single cycle BY Vanessa" , confirming UART transmit and receive on real hardware with the final pin assignment.
+*Real Basys3/RealTerm capture: the CPU receives live keyboard input (interactive-keyboard category)
+and transmits back the text "RISC-V 32I single cycle BY Vanessa", confirming UART transmit and
+receive on real hardware with the final pin assignment.*
 
 Symbolic single-cycle execution diagram
 
@@ -90,24 +103,28 @@ Result of the last completed run: 0 lint errors, 0 DRC errors (Magic), 0 LVS err
 
 <!-- KLayout/Magic render of the final GDS once the antenna-repair re-run is confirmed clean. -->
 
-Supporting Tooling
-RTL & synthesis: Verilog, Yosys, LibreLane/OpenLane (SKY130, sky130_fd_sc_hd).
-Physical verification: OpenROAD, Magic (DRC, GDS streamout), KLayout, Netgen (LVS).
-Functional verification: a custom cycle-accurate Python model, cocotb (test/test.py).
-FPGA validation: Xilinx Vivado (Basys3 target), RealTerm (UART terminal).
-CI: GitHub Actions running the LibreLane/OpenLane hardening flow.
-Repository Structure
-.
-├── src/
-│   └── tt_um_vanessa_riscv.v        # top-level RTL
-├── test/
-│   └── test.py                      # cocotb testbench
-├── categorias/                      # category .bin / .mem program pairs
-├── vivado_actualizado/              # FPGA package (DUT, wrapper, SPI RAM fixture, .xdc)
-├── docs/img/                        # README images
-├── info.yaml                        # Tiny Tapeout project metadata
-├── config.json                      # LibreLane/OpenLane hardening configuration
-└── README.md
+## Supporting Tooling
+
+| Stage | Tools |
+| --- | --- |
+| RTL & synthesis | Verilog, Yosys, LibreLane/OpenLane (SKY130, `sky130_fd_sc_hd`) |
+| Physical verification | OpenROAD, Magic (DRC, GDS streamout), KLayout, Netgen (LVS) |
+| Functional verification | Custom cycle-accurate Python model, cocotb (`test/test.py`) |
+| FPGA validation | Xilinx Vivado (Basys3 target), RealTerm (UART terminal) |
+| CI | GitHub Actions running the LibreLane/OpenLane hardening flow |
+
+## Repository Structure
+
+| Path | Contents |
+| --- | --- |
+| `src/tt_um_vanessa_riscv.v` | Top-level RTL |
+| `test/test.py` | Cocotb testbench |
+| `categorias/` | Category `.bin` / `.mem` program pairs |
+| `vivado_actualizado/` | FPGA package (DUT, wrapper, SPI RAM fixture, `.xdc`) |
+| `docs/` | README images (`UART.png`, diagrams) |
+| `info.yaml` | Tiny Tapeout project metadata |
+| `config.json` | LibreLane/OpenLane hardening configuration |
+| `README.md` | This file |
 
 Current Status
  RTL functionally verified (30/30 RV32I instructions, mutual-exclusion invariant holds).
