@@ -32,11 +32,11 @@ jobs:
 
   gl_test:
     needs: gds
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
-      - name: Forzar pase en GL Test
-        run: echo "Tests omitidos temporalmente. Simulando éxito."
-
+     - name: Run Gate Level Test
+       uses: TinyTapeout/tt-gds-action/gl_test@ttsky26a
+      
   viewer:
     needs: gds
     runs-on: ubuntu-24.04
