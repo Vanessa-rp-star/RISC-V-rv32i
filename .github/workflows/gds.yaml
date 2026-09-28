@@ -2,6 +2,11 @@ name: gds
 
 on:
   push:
+    paths:
+      - 'src/**'
+      - 'config.json'
+      - 'info.yaml'
+      - '.github/workflows/gds.yaml'
   workflow_dispatch:
 
 jobs:
