@@ -132,7 +132,8 @@ state intact.
 
 ## Online Viewers
 
-
+- **GDS layout viewer (3D)**: [Open in the Tiny Tapeout GDS viewer]
+- (https://gds-viewer.tinytapeout.com/?model=https://vanessa-rp-star.github.io/RISC-V-rv32i/tinytapeout.oas&pdk=sky130A)
 
 ## Review and Reproducibility Notes
 
