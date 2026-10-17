@@ -58,9 +58,9 @@ failed run, and keep going. The first chip is the hardest one, and it is within 
 | UART pinout | `ui_in[3]` = RX, `uo_out[4]` = TX (Tiny Tapeout UART-to-USB, option 1) |
 | SPI pinout | `uio[0]` = CS_n, `uio[1]` = MOSI, `uio[2]` = MISO, `uio[3]` = SCK |
 | Die area | 682.64 x 225.76 um (154,113 um2, fixed 4x2 tile) |
-| Placement target density | 75% (`PL_TARGET_DENSITY_PCT`), 76.3% achieved utilization |
+| Placement target density | 76% (`PL_TARGET_DENSITY_PCT`), 79.9% achieved utilization |
 | Project participant | Vanessa Rocha Pérez |
-| Project supervisor | Jose Luis Valtierra Sánchez De La Vega |
+| Project supervisor | Jose Luis Valtierra Sánchez de la Vega |
 
 ## Why 4x2: Redesign from 6x2
 
