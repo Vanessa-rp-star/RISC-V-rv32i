@@ -23,7 +23,7 @@ module tt_um_vanessa_riscv #(
  
     // Divisor REDONDEADO (antes: CLK_FREQ_HZ / BAUD_RATE, truncado a 86).
     // 10_000_000 / 115200 = 86.8 -> 87  (error -0.22 % en vez de +0.94 %)
-    localparam CLKS_PER_BIT = (CLK_FREQ_HZ + (BAUD_RATE / 2)) / BAUD_RATE;
+    localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
  
     localparam INSTR_DEPTH = 8;   
     localparam DATA_DEPTH  = 4;   
@@ -37,13 +37,8 @@ module tt_um_vanessa_riscv #(
     // rst_n se suelte en cualquier momento (la placa TT no lo sincroniza).
     // Necesita reloj durante el reset para que los registros con reset
     // sincrono (casi todos) se limpien.
-    reg [1:0] rst_sync;
-    always @(posedge clk or negedge rst_n) begin
-        if (!rst_n) rst_sync <= 2'b00;
-        else        rst_sync <= {rst_sync[0], 1'b1};
-    end
-    wire rst_n_int = rst_sync[1];
-    wire sys_rst   = ~rst_n_int;
+    wire rst_n_int = rst_n;
+    wire sys_rst   = ~rst_n;
  
     // FSM de 3 modos: LOAD (arranque) -> RUN (ciclo unico) <-> BLOCKLOAD
     // (recargando el siguiente bloque de instrucciones via SPI, sin perder
