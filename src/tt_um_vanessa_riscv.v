@@ -23,7 +23,7 @@ module tt_um_vanessa_riscv #(
  
     // Divisor REDONDEADO (antes: CLK_FREQ_HZ / BAUD_RATE, truncado a 86).
     // 10_000_000 / 115200 = 86.8 -> 87  (error -0.22 % en vez de +0.94 %)
-    localparam CLKS_PER_BIT = (CLK_FREQ_HZ + (BAUD_RATE / 2)) / BAUD_RATE;
+    localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
  
     localparam INSTR_DEPTH = 8;   
     localparam DATA_DEPTH  = 4;   
