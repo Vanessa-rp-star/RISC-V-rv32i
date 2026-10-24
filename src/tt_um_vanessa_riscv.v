@@ -1,9 +1,9 @@
 // Single Cycle RV32I 
 // By: Vanessa RP
-
-
+ 
+ 
 `default_nettype none
-
+ 
 // =============================================================================
 // MÓDULO PRINCIPAL (WRAPPER PARA TINY TAPEOUT)
 // =============================================================================
@@ -21,7 +21,9 @@ module tt_um_vanessa_riscv #(
     input  wire        rst_n
 );
  
-    localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
+    // Divisor REDONDEADO (antes: CLK_FREQ_HZ / BAUD_RATE, truncado a 86).
+    // 10_000_000 / 115200 = 86.8 -> 87  (error -0.22 % en vez de +0.94 %)
+    localparam CLKS_PER_BIT = (CLK_FREQ_HZ + (BAUD_RATE / 2)) / BAUD_RATE;
  
     localparam INSTR_DEPTH = 8;   
     localparam DATA_DEPTH  = 4;   
@@ -30,12 +32,23 @@ module tt_um_vanessa_riscv #(
     localparam RAM_BYTES = DATA_DEPTH * 4;
     localparam BLOCK_BYTES = INSTR_DEPTH * 4;  // 32 bytes por bloque 
  
-    wire sys_rst = ~rst_n;
+    // Sincronizador de reset: asercion ASINCRONA, liberacion SINCRONA.
+    // Todo el diseno sale del reset en el mismo flanco de reloj aunque
+    // rst_n se suelte en cualquier momento (la placa TT no lo sincroniza).
+    // Necesita reloj durante el reset para que los registros con reset
+    // sincrono (casi todos) se limpien.
+    reg [1:0] rst_sync;
+    always @(posedge clk or negedge rst_n) begin
+        if (!rst_n) rst_sync <= 2'b00;
+        else        rst_sync <= {rst_sync[0], 1'b1};
+    end
+    wire rst_n_int = rst_sync[1];
+    wire sys_rst   = ~rst_n_int;
  
     // FSM de 3 modos: LOAD (arranque) -> RUN (ciclo unico) <-> BLOCKLOAD
     // (recargando el siguiente bloque de instrucciones via SPI, sin perder
     // el contenido del banco de registros)
-
+ 
     localparam M_LOAD      = 2'd0;
     localparam M_RUN       = 2'd1;
     localparam M_BLOCKLOAD = 2'd2;
@@ -137,7 +150,7 @@ module tt_um_vanessa_riscv #(
     end
  
     spi_burst_master #(.CLK_DIV(4)) mi_spi_burst (
-        .clk(clk), .rst_n(rst_n),
+        .clk(clk), .rst_n(rst_n_int),
         .start(spi_start_pulse),
         .cmd(8'h03),                  // READ, compatible con spi-ram-emu
         .addr(spi_addr_reg),
@@ -356,28 +369,47 @@ module data_mem #(
     assign data_out = mem[addr];
 endmodule
  
+// -----------------------------------------------------------------------------
+// Receiver_RxD (ACTUALIZADO):
+//  - Sincronizador de 2 flip-flops en RxD (la linea es asincrona al reloj).
+//  - Validacion del bit de parada: rx_done solo si el stop esta en 1.
+//    Si esta en 0 (linea pegada en bajo o trama rota) se descarta el byte y
+//    se espera a que la linea vuelva a 1 (estado 3) antes de buscar otro inicio.
+//  - Con la linea en bajo de forma continua ya NO se generan bytes 0x00.
+//  Latencia de RX: +2 ciclos respecto al receptor original.
+// -----------------------------------------------------------------------------
 module Receiver_RxD #(parameter CLKS_PER_BIT = 104)(
     input wire clk, reset, RxD, output wire [7:0] RxData, output reg rx_done
 );
     localparam HALF_BIT = CLKS_PER_BIT/2;
+    reg rxd_s1, rxd_s2;
+    wire rxd = rxd_s2;
     reg [$clog2(CLKS_PER_BIT+1)-1:0] baud_cnt;
     reg [2:0] bit_ptr; reg [7:0] rx_reg; reg [1:0] state;
     assign RxData = rx_reg;
     always @(posedge clk) begin
-        if (reset) begin state<=0; rx_done<=0; baud_cnt<=0; bit_ptr<=0; rx_reg<=0; end
-        else begin
+        if (reset) begin
+            rxd_s1<=1'b1; rxd_s2<=1'b1;
+            state<=0; rx_done<=0; baud_cnt<=0; bit_ptr<=0; rx_reg<=0;
+        end else begin
+            rxd_s1 <= RxD;
+            rxd_s2 <= rxd_s1;
             rx_done <= 0;
             case (state)
-                0: if (!RxD) begin
+                0: if (!rxd) begin
                        if (baud_cnt==HALF_BIT) begin state<=1; baud_cnt<=0; bit_ptr<=0; end
                        else baud_cnt<=baud_cnt+1;
                    end else baud_cnt<=0;
                 1: if (baud_cnt==CLKS_PER_BIT-1) begin
-                       baud_cnt<=0; rx_reg[bit_ptr]<=RxD;
+                       baud_cnt<=0; rx_reg[bit_ptr]<=rxd;
                        if (bit_ptr==7) state<=2; else bit_ptr<=bit_ptr+1;
                    end else baud_cnt<=baud_cnt+1;
-                2: if (baud_cnt==CLKS_PER_BIT-1) begin state<=0; baud_cnt<=0; rx_done<=1; end
-                   else baud_cnt<=baud_cnt+1;
+                2: if (baud_cnt==CLKS_PER_BIT-1) begin
+                       baud_cnt<=0;
+                       if (rxd) begin rx_done<=1; state<=0; end   // stop valido
+                       else     state<=3;                         // stop invalido
+                   end else baud_cnt<=baud_cnt+1;
+                3: if (rxd) begin state<=0; baud_cnt<=0; end      // espera linea en alto
                 default: state<=0;
             endcase
         end
@@ -658,4 +690,3 @@ module csr_unit(input clk, reset, input [11:0] csr_addr, input [31:0] wdata, inp
         else if (csr_we) case(csr_addr) 12'h305:mtvec<=wdata; 12'h341:mepc<=wdata; 12'h342:mcause<=wdata; endcase
     end
 endmodule
- 
