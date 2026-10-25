@@ -18,6 +18,11 @@ The chip has three modes, shown on `uo_out[7:6]`:
 | `10` | BLOCKLOAD | Reads 32 bytes from the SPI memory, then returns to RUN with the PC at 0 |
 
 The modes are mutually exclusive: the UART bootloader, instruction execution and the SPI block read never happen at the same time.
+UART receiver and reset behavior
+
+The UART receiver has a two-flip-flop input synchronizer and checks the stop bit. A frame whose stop bit is 0 is discarded, and the receiver then waits for the line to return high. With RX held low it no longer produces phantom 0x00 bytes. The UART divisor is 86 clock cycles per bit, so at 10 MHz the real baud rate is 116,279 (+0.94 % over 115200), which standard serial terminals accept.
+
+The design uses rst_n directly, with no reset synchronizer. If the RX line rises from low to high between about 4 us and 82 us after reset is released, the receiver can still produce one phantom byte, which shifts block 0. The fix is in the host: drive ui_in[3] high before releasing reset, or wait at least 100 us after releasing reset before sending.
 
 ### Peripheral memory map
 
@@ -37,7 +42,7 @@ The modes are mutually exclusive: the UART bootloader, instruction execution and
 | Mutual-exclusion invariant | 0 violations in 136,353 simulated cycles |
 | Category programs validated on FPGA | 10/10 (A, B, C, D, D2, E, F2, G, H_suma, H_resta) |
 | Clock | 10 MHz |
-| UART | 115200 baud, 8N1 |
+| UART | 	115200 baud nominal, 8N1 (divisor 86, real 116,279 baud at 10 MHz) |
 | Physical instruction memory | 8 words, chained in blocks over SPI |
 | Size | 4x2 tiles |
 
@@ -50,8 +55,8 @@ Silicon validation is pending. Everything above was verified in simulation, at g
 | Requirement | Detail |
 | --- | --- |
 | Board | Tiny Tapeout demo board with the project enabled |
-| Clock | 10 MHz |
-| Reset | `rst_n` low at start |
+| Clock | 10 MHz (UART timing tolerates roughly 9.6 to 10.2 MHz, from a simulation sweep) |
+| Reset | rst_n low at start, clock running during reset. Drive ui_in[3] (UART RX) high before releasing it |
 | USB | USB-C cable from the demo board to the computer |
 | Serial terminal | RealTerm or similar, 115200 baud, 8 data bits, no parity, 1 stop bit |
 | Chip UART | RX on `ui_in[3]`, TX on `uo_out[4]` |
@@ -91,6 +96,7 @@ After `0xAA` the processor stays in an infinite loop. That is the expected behav
 
 - The byte `0x03` appears in the programs. If your terminal or serial bridge treats it as Ctrl-C, disable that behavior or bytes will be lost.
 - If the SPI memory is not loaded, the chip executes whatever it reads and the output after block 0 is not valid.
+- 
 
 ## External hardware
 
