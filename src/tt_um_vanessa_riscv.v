@@ -4,9 +4,7 @@
  
 `default_nettype none
  
-// =============================================================================
 // MÓDULO PRINCIPAL (WRAPPER PARA TINY TAPEOUT)
-// =============================================================================
 module tt_um_vanessa_riscv #(
     parameter CLK_FREQ_HZ = 10_000_000,
     parameter BAUD_RATE   = 115200
@@ -21,10 +19,9 @@ module tt_um_vanessa_riscv #(
     input  wire        rst_n
 );
  
-    // Divisor REDONDEADO (antes: CLK_FREQ_HZ / BAUD_RATE, truncado a 86).
-    // 10_000_000 / 115200 = 86.8 -> 87  (error -0.22 % en vez de +0.94 %)
-    localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE;
- 
+      // Divisor TRUNCADO: CLK_FREQ_HZ / BAUD_RATE = 86 ciclos por bit.
+    // 10_000_000 / 115200 = 86.8 -> 86  (error +0.94 %, baud real 116279)
+    localparam CLKS_PER_BIT = CLK_FREQ_HZ / BAUD_RATE; 
     localparam INSTR_DEPTH = 8;   
     localparam DATA_DEPTH  = 4;   
     localparam IAWIDTH = $clog2(INSTR_DEPTH);
@@ -32,11 +29,11 @@ module tt_um_vanessa_riscv #(
     localparam RAM_BYTES = DATA_DEPTH * 4;
     localparam BLOCK_BYTES = INSTR_DEPTH * 4;  // 32 bytes por bloque 
  
-    // Sincronizador de reset: asercion ASINCRONA, liberacion SINCRONA.
-    // Todo el diseno sale del reset en el mismo flanco de reloj aunque
-    // rst_n se suelte en cualquier momento (la placa TT no lo sincroniza).
-    // Necesita reloj durante el reset para que los registros con reset
-    // sincrono (casi todos) se limpien.
+       // SIN sincronizador de reset: rst_n_int es solo un alias de rst_n.
+    // El diseno usa sys_rst = ~rst_n directamente; la liberacion del reset
+    // es asincrona respecto al reloj (la placa TT no lo sincroniza).
+    // Los registros con reset sincrono necesitan reloj durante el reset
+    // para limpiarse (el SPI master usa reset asincrono directo).
     wire rst_n_int = rst_n;
     wire sys_rst   = ~rst_n;
  
