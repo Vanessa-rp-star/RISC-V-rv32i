@@ -6,7 +6,7 @@ from cocotb.utils import get_sim_time
 CLK_FREQ_HZ = 10_000_000     # frecuencia real del chip (ver info.yaml/config.json)
 BAUD_RATE   = 115200
 CLK_PERIOD_NS = round(1e9 / CLK_FREQ_HZ)
-CLKS_PER_BIT  = (CLK_FREQ_HZ + BAUD_RATE // 2) // BAUD_RATE   # 87: igual que el RTL (divisor redondeado)
+CLKS_PER_BIT  = CLK_FREQ_HZ // BAUD_RATE   # 86: igual que el RTL (divisor truncado, baud real 116279)
 LOW_LINE_CYCLES = 30_000     # linea RX en bajo antes de cargar (el receptor original llenaba la imem con ceros en ~26 500 ciclos)
 BIT_NS        = CLKS_PER_BIT * CLK_PERIOD_NS
  
@@ -83,8 +83,8 @@ async def reset_dut(dut):
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
-    # El sincronizador de reset del RTL libera el diseno 2-3 ciclos despues
-    # de rst_n; se esperan 5 ciclos antes de empezar a hablar por UART.
+    # El RTL NO tiene sincronizador de reset (rst_n se usa directo); se
+    # esperan 5 ciclos antes de empezar a hablar por UART.
     await ClockCycles(dut.clk, 5)
  
  
@@ -330,8 +330,8 @@ async def test_boot_and_first_block_only(dut):
  
  
 # =============================================================================
-# PRUEBAS NUEVAS (validan receptor con sincronizador + stop, divisor 87 y
-# sincronizador de reset). Con el RTL original T3 y T5 deben FALLAR.
+# PRUEBAS NUEVAS (validan receptor con sincronizador + stop, divisor 86 y
+# reset sin sincronizador). Con el RTL original T3 y T5 deben FALLAR.
 # =============================================================================
 def _mode(dut):
     return (int(dut.uo_out.value) >> 6) & 0b11
