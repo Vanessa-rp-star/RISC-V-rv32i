@@ -60,6 +60,7 @@ failed run, and keep going. The first chip is the hardest one, and it is within 
 | SPI pinout | `uio[0]` = CS_n, `uio[1]` = MOSI, `uio[2]` = MISO, `uio[3]` = SCK |
 | Die area | 682.64 x 225.76 um (154,113 um2, fixed 4x2 tile) |
 | Placement target density | 76% (`PL_TARGET_DENSITY_PCT`), 79.3% achieved utilization |
+| Afiliación | Universidad Autónoma de Baja California (UABC) |
 | Project participant | Vanessa Rocha Pérez |
 | Project supervisor | Jose Luis Valtierra Sánchez de la Vega |
 
@@ -225,7 +226,7 @@ Final run of the LibreLane flow (`metrics.json`):
 1. Connect the demo board to the computer with a USB-C cable. The board bridges the chip UART to a
    serial port through its RP2350 (see the Tiny Tapeout
    [UART-to-USB pinout](https://tinytapeout.com/specs/pinouts/#uart-to-usb)).
-2. Enable the project, set the clock to 10 MHz and reset, with the UART RX line (`ui_in[3]`) already high when reset is released (or wait at least 100 us before sending). `uo_out[7:6]` must read `00` (LOAD).
+2.Enable the project and set the clock to 10 MHz, and keep it running. Reset the chip with the commander’s reset (not only the board’s reset button), holding rst_n low for at least 1 ms with the clock running. Keep the UART RX line (ui_in[3]) high before releasing reset, and wait at least 100 us before sending. uo_out[7:6] should read 00 (LOAD).
 3. Load the program image into the SPI memory (block `n` at address `n*32`).
 4. Open RealTerm at 115200 baud, 8N1, and send `bloque0_<program>.bin` (32 bytes) unmodified.
 5. The chip enters RUN (`01`), requests the remaining blocks (BLOCKLOAD, `10`) and sends its results
