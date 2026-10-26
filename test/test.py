@@ -6,7 +6,8 @@ from cocotb.utils import get_sim_time
 CLK_FREQ_HZ = 10_000_000     # frecuencia real del chip (ver info.yaml/config.json)
 BAUD_RATE   = 115200
 CLK_PERIOD_NS = round(1e9 / CLK_FREQ_HZ)
-CLKS_PER_BIT  = CLK_FREQ_HZ // BAUD_RATE
+CLKS_PER_BIT  = CLK_FREQ_HZ // BAUD_RATE   # 86: igual que el RTL (divisor truncado, baud real 116279)
+LOW_LINE_CYCLES = 30_000     # linea RX en bajo antes de cargar (el receptor original llenaba la imem con ceros en ~26 500 ciclos)
 BIT_NS        = CLKS_PER_BIT * CLK_PERIOD_NS
  
 INSTR_DEPTH  = 8
@@ -26,16 +27,16 @@ SPI_MOSI_BIT = 1
 SPI_SCLK_BIT = 3
 SPI_MISO_BIT = 2
  
-
+ 
 SPI_CLK_DIV = 4
 SPI_BITS_PER_BLOCK = 24 + BLOCK_BYTES * 8
 SPI_RELOAD_CYCLES = SPI_BITS_PER_BLOCK * 2 * SPI_CLK_DIV   # 2240 ciclos = 224us a 10MHz
  
-
+ 
 UART_BYTE_TIMEOUT_CYCLES = SPI_RELOAD_CYCLES * 2 + 2000  # margen amplio
  
  
-
+ 
 BLOQUES_TEST = [
     # bloque 0
     0x04000a13, 0x04c00a93, 0x00a00093, 0x00300113,
@@ -82,10 +83,12 @@ async def reset_dut(dut):
     dut.rst_n.value = 0
     await ClockCycles(dut.clk, 10)
     dut.rst_n.value = 1
-    await ClockCycles(dut.clk, 2)
+    # El RTL NO tiene sincronizador de reset (rst_n se usa directo); se
+    # esperan 5 ciclos antes de empezar a hablar por UART.
+    await ClockCycles(dut.clk, 5)
  
  
-async def uart_send_byte(dut, byte):
+async def uart_send_byte(dut, byte, cpb=None, bad_stop=False):
     """CORREGIDO: usa ClockCycles(CLKS_PER_BIT) en vez de Timer(BIT_NS).
     Numericamente son la misma duracion (CLKS_PER_BIT*CLK_PERIOD_NS==BIT_NS
     de forma exacta), pero Timer() espera un tiempo ABSOLUTO de simulacion
@@ -95,24 +98,27 @@ async def uart_send_byte(dut, byte):
     correcto y que la secuencia esperada SI se recibe cuando todo se
     sincroniza estrictamente por ciclos -- por eso se elimina cualquier
     espera basada en Timer() en las rutinas de UART."""
+    cpb = cpb or CLKS_PER_BIT
     dut.ui_in.value = 0
-    await ClockCycles(dut.clk, CLKS_PER_BIT)
+    await ClockCycles(dut.clk, cpb)
     for i in range(8):
         bit = (byte >> i) & 1
         dut.ui_in.value = (bit << RX_BIT)
-        await ClockCycles(dut.clk, CLKS_PER_BIT)
+        await ClockCycles(dut.clk, cpb)
+    # bit de parada: normalmente 1; con bad_stop=True se manda 0 (trama rota)
+    dut.ui_in.value = 0 if bad_stop else (1 << RX_BIT)
+    await ClockCycles(dut.clk, cpb)
     dut.ui_in.value = (1 << RX_BIT)
-    await ClockCycles(dut.clk, CLKS_PER_BIT)
  
  
-async def load_block0(dut, words):
+async def load_block0(dut, words, cpb=None):
     """Carga las 8 palabras de instruccion (32 bytes) del bloque 0, LSB
     primero por palabra -- protocolo del bootloader con INSTR_DEPTH=8.
     Los bloques 1..4 los trae el propio chip via SPI, no se envian aqui."""
     assert len(words) == BLOCK_WORDS
     for w in words:
         for shift in (0, 8, 16, 24):
-            await uart_send_byte(dut, (w >> shift) & 0xFF)
+            await uart_send_byte(dut, (w >> shift) & 0xFF, cpb)
  
  
 def start_uart_monitor(dut):
@@ -321,4 +327,114 @@ async def test_boot_and_first_block_only(dut):
         spi_task.cancel()
         mode_task.cancel()
         uart_task.cancel()
+ 
+ 
+# =============================================================================
+# PRUEBAS NUEVAS (validan receptor con sincronizador + stop, divisor 86 y
+# reset sin sincronizador). Con el RTL original T3 y T5 deben FALLAR.
+# =============================================================================
+def _mode(dut):
+    return (int(dut.uo_out.value) >> 6) & 0b11
+ 
+ 
+async def _arrancar_y_comprobar(dut, cpb=None, antes=None):
+    """Lanza esclavo SPI y monitor UART, carga el bloque 0 y comprueba la
+    secuencia completa. 'antes' es una corrutina opcional que se ejecuta
+    justo antes de cargar (ruido, trama rota, etc.)."""
+    spi_task = spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
+    received, uart_task = start_uart_monitor(dut)
+    try:
+        if antes is not None:
+            await antes()
+        await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS], cpb)
+        await wait_for_n_bytes(dut, received, len(EXPECTED_UART_SEQUENCE))
+        recibidos = received[:len(EXPECTED_UART_SEQUENCE)]
+        assert recibidos == EXPECTED_UART_SEQUENCE, (
+            f"secuencia esperada {[hex(b) for b in EXPECTED_UART_SEQUENCE]}, "
+            f"llego {[hex(b) for b in recibidos]}"
+        )
+    finally:
+        spi_task.cancel()
+        uart_task.cancel()
+ 
+ 
+@cocotb.test()
+async def test_rx_linea_baja_antes_de_cargar(dut):
+    """T3: RX en BAJO al liberar el reset durante LOW_LINE_CYCLES ciclos.
+    El chip debe seguir en LOAD (sin bytes fantasma) y, al subir la linea,
+    cargar y ejecutar el programa normalmente."""
+    await start_clock(dut)
+    dut.ena.value = 1
+    dut.uio_in.value = 0
+    dut.ui_in.value = 0                 # RX en bajo: el peor caso
+    dut.rst_n.value = 0
+    await ClockCycles(dut.clk, 10)
+    dut.rst_n.value = 1
+ 
+    async def linea_baja_y_subir():
+        await ClockCycles(dut.clk, LOW_LINE_CYCLES)
+        assert _mode(dut) == 0b00, f"con RX en bajo el chip salio de LOAD (mode={_mode(dut):02b})"
+        dut.ui_in.value = (1 << RX_BIT)
+        await ClockCycles(dut.clk, 4 * CLKS_PER_BIT)
+ 
+    await _arrancar_y_comprobar(dut, antes=linea_baja_y_subir)
+ 
+ 
+@cocotb.test()
+async def test_rx_tolerancia_baudios(dut):
+    """T4: el PC manda con +-3 % de error de baudios."""
+    await start_clock(dut)
+    for err in (-0.03, 0.03):
+        await reset_dut(dut)
+        cpb = round(CLKS_PER_BIT * (1 + err))
+        dut._log.info(f"[T4] bit del PC = {cpb} ciclos (RTL usa {CLKS_PER_BIT})")
+        await _arrancar_y_comprobar(dut, cpb=cpb)
+ 
+ 
+@cocotb.test()
+async def test_rx_stop_invalido_se_descarta(dut):
+    """T5: una trama con bit de parada en 0 NO debe contar como byte del
+    bootloader (si contara, todo el bloque quedaria desplazado un byte)."""
+    await start_clock(dut)
+    await reset_dut(dut)
+ 
+    async def trama_rota():
+        await uart_send_byte(dut, 0x55, bad_stop=True)
+        await ClockCycles(dut.clk, 4 * CLKS_PER_BIT)
+ 
+    await _arrancar_y_comprobar(dut, antes=trama_rota)
+ 
+ 
+@cocotb.test()
+async def test_reset_en_run_y_recarga(dut):
+    """T6: reset a mitad de la vida del chip (modo RUN). Debe volver a LOAD,
+    dejar el SPI en reposo y poder cargar y ejecutar otra vez."""
+    await start_clock(dut)
+    await reset_dut(dut)
+    spi_task = spi_ram_slave(dut, words_to_bytes(BLOQUES_TEST))
+    received, uart_task = start_uart_monitor(dut)
+    try:
+        await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
+        await wait_for_n_bytes(dut, received, len(EXPECTED_UART_SEQUENCE))
+        await ClockCycles(dut.clk, 2 * CLKS_PER_BIT)      # TX en reposo
+ 
+        dut.rst_n.value = 0
+        await ClockCycles(dut.clk, 4)
+        assert _mode(dut) == 0b00, f"tras el reset el modo es {_mode(dut):02b}"
+        uio = int(dut.uio_out.value)
+        assert (uio >> SPI_CS_BIT) & 1 == 1 and (uio >> SPI_SCLK_BIT) & 1 == 0, "SPI no quedo en reposo"
+        await ClockCycles(dut.clk, 6)
+        dut.rst_n.value = 1
+        await ClockCycles(dut.clk, 5)
+ 
+        received.clear()
+        await load_block0(dut, BLOQUES_TEST[0:BLOCK_WORDS])
+        await wait_for_n_bytes(dut, received, len(EXPECTED_UART_SEQUENCE))
+        assert received[:len(EXPECTED_UART_SEQUENCE)] == EXPECTED_UART_SEQUENCE, (
+            f"tras el reset llego {[hex(b) for b in received]}"
+        )
+    finally:
+        spi_task.cancel()
+        uart_task.cancel()
+ 
  
