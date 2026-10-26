@@ -13,4 +13,4 @@ jobs:
           submodules: recursive
 
       - name: Build docs
-        uses: TinyTapeout/tt-gds-action/docs@ttsky26a
+        uses: TinyTapeout/tt-gds-action/docs@ttsky26d
