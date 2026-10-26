@@ -2,7 +2,8 @@ name: docs
 
 on:
   push:
-   workflow_dispatch:
+  workflow_dispatch:
+
 jobs:
   docs:
     runs-on: ubuntu-24.04
@@ -13,4 +14,4 @@ jobs:
           submodules: recursive
 
       - name: Build docs
-        uses: TinyTapeout/tt-gds-action/docs@ttsky26a
+        uses: TinyTapeout/tt-gds-action/docs@ttsky26d
