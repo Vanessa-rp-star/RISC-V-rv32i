@@ -52,13 +52,14 @@ failed run, and keep going. The first chip is the hardest one, and it is within 
 | Implementation | Standard-cell synthesis (LibreLane: Yosys and OpenROAD) |
 | Core / I/O supply | 1.8 V / 3.3 V |
 | Clock | 10 MHz |
-| UART | 115200 baud, 8N1 (`CLKS_PER_BIT = 86`) |
+| UART | 115200 baud nominal, 8N1 (`CLKS_PER_BIT = 86`, real 116,279 baud at 10 MHz, +0.94 %) |
+| Reset | `rst_n` used directly, no reset synchronizer |
 | Physical instruction memory | 8 words (`INSTR_DEPTH = 8`), 4 data words (`DATA_DEPTH = 4`) |
 | ISA coverage | RV32I base set, 30/30 instructions verified |
 | UART pinout | `ui_in[3]` = RX, `uo_out[4]` = TX (Tiny Tapeout UART-to-USB, option 1) |
 | SPI pinout | `uio[0]` = CS_n, `uio[1]` = MOSI, `uio[2]` = MISO, `uio[3]` = SCK |
 | Die area | 682.64 x 225.76 um (154,113 um2, fixed 4x2 tile) |
-| Placement target density | 76% (`PL_TARGET_DENSITY_PCT`), 79.9% achieved utilization |
+| Placement target density | 76% (`PL_TARGET_DENSITY_PCT`), 79.3% achieved utilization |
 | Project participant | Vanessa Rocha Pérez |
 | Project supervisor | Jose Luis Valtierra Sánchez de la Vega |
 
@@ -113,6 +114,18 @@ state intact.
 | `uo_out[7:6]` | `mode`: `00` LOAD, `01` RUN, `10` BLOCKLOAD |
 | `uio[0]` / `uio[1]` / `uio[2]` / `uio[3]` | SPI CS_n / MOSI / MISO / SCK |
 
+### UART receiver and reset behavior
+
+The UART receiver has a two-flip-flop input synchronizer and checks the stop bit. A frame whose stop
+bit is 0 is discarded, and the receiver then waits for the line to return high. With RX held low it
+no longer produces phantom `0x00` bytes. The divisor is 86 clock cycles per bit, so at 10 MHz the
+real baud rate is 116,279 (+0.94 % over 115200).
+
+The design uses `rst_n` directly, with no reset synchronizer. If the RX line rises from low to high
+between about 4 us and 82 us after reset is released, the receiver can still produce one phantom
+byte, which shifts block 0. The host must drive `ui_in[3]` high before releasing reset, or wait at
+least 100 us after releasing reset before sending.
+
 ## Design Methodology
 
 1. **Cycle-accurate Python model** of the datapath and mode logic, used as the reference for the
@@ -120,9 +133,10 @@ state intact.
 2. **RTL verification**: 30/30 RV32I instructions verified individually, plus a mutual-exclusion
    invariant checked every clock cycle across 136,353 simulated cycles and 33 block reloads, with
    0 violations. cocotb tests in `test/test.py` load block 0 over UART, serve the remaining blocks
-   from a Python SPI memory model and compare the UART output.
-3. **Gate-level test**: the same cocotb test runs on the final post-layout netlist (`GATES=yes`)
-   in CI and passes.
+   from a Python SPI memory model and compare the UART output. They also cover the UART receiver:
+   RX held low at reset release, +-3 % baud error, invalid stop bit and reset during RUN.
+3. **Gate-level test**: the same cocotb tests run on the final post-layout netlist (`GATES=yes`)
+   in CI and pass.
 4. **FPGA validation**: the 10 category programs, repackaged for the 8-word block-chained memory,
    run on a Basys3 board with Vivado and are read back over UART with RealTerm: 10/10 match their
    predicted outputs.
@@ -132,8 +146,7 @@ state intact.
 
 ## Online Viewers
 
-- **GDS layout viewer (3D)**: [Open in the Tiny Tapeout GDS viewer]
-- (https://gds-viewer.tinytapeout.com/?model=https://vanessa-rp-star.github.io/RISC-V-rv32i/tinytapeout.oas&pdk=sky130A)
+- **GDS layout viewer (3D)**: [Open in the Tiny Tapeout GDS viewer](https://gds-viewer.tinytapeout.com/?model=https://vanessa-rp-star.github.io/RISC-V-rv32i/tinytapeout.oas&pdk=sky130A)
 
 ## Review and Reproducibility Notes
 
@@ -188,44 +201,31 @@ Final run of the LibreLane flow (`metrics.json`):
 | Metric | Value |
 | --- | --- |
 | Die area | 154,113 um2 (682.64 x 225.76 um) |
-| Utilization achieved | 76.3% (placement target 75%) |
-| Standard cells | 11,481, of which 1,753 sequential |
+| Utilization achieved | 79.3% (placement target 76%) |
+| Standard cells | 12,032 (including 2,158 tap cells), of which 1,755 sequential |
 | Total power (nominal corner) | 1.40 mW |
 | DRC errors (Magic) | 0 |
 | LVS differences (devices, nets, pins, properties) | 0 |
-| Worst setup slack (9 corners) | +44.56 ns (`max_ss_100C_1v60`, 100 ns period) |
-| Worst hold slack (9 corners) | +0.023 ns (`min_ff_n40C_1v95`) |
+| Worst setup slack (9 corners) | +46.53 ns (`max_ss_100C_1v60`, 100 ns period) |
+| Worst hold slack (9 corners) | +0.020 ns (`min_ff_n40C_1v95`) |
 | Gate-level test | Passes in CI |
 
 ### Layout strategy
 
 - Flow: LibreLane 3.0.0 (Yosys synthesis, OpenROAD floorplan, placement, CTS and routing, Magic and
   KLayout GDS streamout, Magic DRC, Netgen LVS).
-- `PL_TARGET_DENSITY_PCT = 75`, `FP_SIZING = "absolute"` (fixed 4x2 tile), `SYNTH_STRATEGY = "AREA 0"`,
+- `PL_TARGET_DENSITY_PCT = 76`, `FP_SIZING = "absolute"` (fixed 4x2 tile), `SYNTH_STRATEGY = "AREA 0"`,
   asymmetric margins (`LEFT/RIGHT_MARGIN_MULT = 6`, `TOP/BOTTOM_MARGIN_MULT = 1`) and a single-layer
   power grid (`FP_PDN_MULTILAYER = 0`) to fit the tile.
-- Timing repair was kept minimal (`DESIGN_REPAIR_MAX_SLEW_PCT = 0`, `DESIGN_REPAIR_MAX_CAP_PCT = 0`,
-  `PL_RESIZER_HOLD_SLACK_MARGIN = 0.0`) and heuristic diode insertion was disabled, to save area in a
-  dense floorplan.
 
-### Known limitations (accepted)
 
-| Item | Value | Note |
-| --- | --- | --- |
-| Antenna violations | 56 nets, 90 pins | Accepted. Antenna repair was limited to jumper insertion and no diodes were added, to preserve area |
-| Max slew violations | 915 (nominal corner), 6,373 (worst corner) | Reported by STA separately from setup and hold slack, which stay positive |
-| Max capacitance violations | 63 (nominal corner), 459 (worst corner) | Same as above |
-| Max fanout violations | 0 | |
-
-These residuals come from the area-first configuration. They do not appear in functional,
-gate-level or FPGA tests. Their effect on silicon is not known until the chip is measured.
 
 ## Using the Chip on the Tiny Tapeout Demo Board
 
 1. Connect the demo board to the computer with a USB-C cable. The board bridges the chip UART to a
    serial port through its RP2350 (see the Tiny Tapeout
    [UART-to-USB pinout](https://tinytapeout.com/specs/pinouts/#uart-to-usb)).
-2. Enable the project, set the clock to 10 MHz and reset. `uo_out[7:6]` must read `00` (LOAD).
+2. Enable the project, set the clock to 10 MHz and reset, with the UART RX line (`ui_in[3]`) already high when reset is released (or wait at least 100 us before sending). `uo_out[7:6]` must read `00` (LOAD).
 3. Load the program image into the SPI memory (block `n` at address `n*32`).
 4. Open RealTerm at 115200 baud, 8N1, and send `bloque0_<program>.bin` (32 bytes) unmodified.
 5. The chip enters RUN (`01`), requests the remaining blocks (BLOCKLOAD, `10`) and sends its results
@@ -272,6 +272,8 @@ loop. See `docs/info.md` for the full procedure.
   cost of a short reload pause between blocks, and it cut the design from 12 to 8 tiles.
 - The same RTL and pin assignment were validated on FPGA and in the post-layout netlist, so the
   FPGA results are a meaningful predictor of the silicon behavior.
+- A two-flip-flop synchronizer and a stop-bit check make the UART receiver robust to a line held low
+  at reset. A short host-side sequence covers the small window that remains.
 
 
 ## Acknowledgment
