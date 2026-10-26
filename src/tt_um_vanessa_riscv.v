@@ -1,6 +1,6 @@
 // Single Cycle RV32I 
 // By: Vanessa RP
- 
+
 `default_nettype none
  
 // MÓDULO PRINCIPAL (WRAPPER PARA TINY TAPEOUT)
