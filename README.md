@@ -52,6 +52,7 @@ failed run, and keep going. The first chip is the hardest one, and it is within 
 | Implementation | Standard-cell synthesis (LibreLane: Yosys and OpenROAD) |
 | Core / I/O supply | 1.8 V / 3.3 V |
 | Clock | 10 MHz |
+| FPGA prototype (Basys 3) | Artix-7, Vivado 2024.2, post-implementation: 1,803 LUTs |
 | UART | 115200 baud nominal, 8N1 (`CLKS_PER_BIT = 86`, real 116,279 baud at 10 MHz, +0.94 %) |
 | Reset | `rst_n` used directly, no reset synchronizer |
 | Physical instruction memory | 8 words (`INSTR_DEPTH = 8`), 4 data words (`DATA_DEPTH = 4`) |
@@ -60,7 +61,7 @@ failed run, and keep going. The first chip is the hardest one, and it is within 
 | SPI pinout | `uio[0]` = CS_n, `uio[1]` = MOSI, `uio[2]` = MISO, `uio[3]` = SCK |
 | Die area | 682.64 x 225.76 um (154,113 um2, fixed 4x2 tile) |
 | Placement target density | 76% (`PL_TARGET_DENSITY_PCT`), 79.3% achieved utilization |
-| Afiliación | Universidad Autónoma de Baja California (UABC) |
+| Institution | Universidad Autónoma de Baja California (UABC) |
 | Project participant | Vanessa Rocha Pérez |
 | Project supervisor | Jose Luis Valtierra Sánchez de la Vega |
 
